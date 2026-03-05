@@ -123,6 +123,10 @@ class ChatRequest(BaseModel):
 
 # ---- API Endpoints ----
 
+@app.get("/")
+def health_check():
+    return {"status": "active", "message": "Keeping the AI brain awake!"}
+
 @app.post("/api/register", response_model=Token)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
