@@ -284,6 +284,11 @@ export default function App() {
   const [profileVersion, setProfileVersion] = useState("v1.0");
   const [summaryHistory, setSummaryHistory] = useState([]); // { type, date, content, coveredDates }
 
+  // Onboarding vs Main App
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0); // 0=intro, 1-3=questions, 4=generating
+  const [obAnswers, setObAnswers] = useState({ q1: "", q2: "", q3: "", extra: "" });
+
   // Reminder bubble
   const [reminder, setReminder] = useState(null); // { type: 'week'|'month'|'year', label: string }
   const [reminderDismissed, setReminderDismissed] = useState(false);
@@ -399,8 +404,12 @@ export default function App() {
     ]).then(([e, profileState, lastDismissed, summaries, me]) => {
       setEntries(e);
       setStreak(calcStreak(e));
-      if (profileState?.content) setProfile(profileState.content);
-      if (profileState?.version) setProfileVersion(profileState.version);
+      if (profileState?.content) {
+        setProfile(profileState.content);
+        setProfileVersion(profileState.version || "v1.0");
+      } else {
+        setNeedsOnboarding(true);
+      }
       if (summaries) setSummaryHistory(summaries);
       if (me) {
         setApiKeyInput(me.api_key || "");
@@ -894,6 +903,41 @@ ${profile}
   const Divider = () => <div style={{ height: 1, background: "linear-gradient(to right,transparent,rgba(100,120,200,0.2),transparent)", margin: "22px 0" }} />;
 
   // ══════════════════════════════════════════════════════
+  // ONBOARDING LOGIC
+  // ══════════════════════════════════════════════════════
+  const handleOnboardingSubmit = async () => {
+    setOnboardingStep(4); // Generating state
+    const answers = `
+1. 面对压力时的反应：${obAnswers.q1}
+2. 计划与行动力：${obAnswers.q2}
+3. 补充特质：${obAnswers.extra || "无"}
+`;
+    const sys = "你是一个出色的性格侧写师。用户刚刚注册了日记日记本，请根据她以下的回答，生成一段100字左右的初始性格档案。不要任何客套话，直接输出档案文本：\n\n" + answers;
+
+    try {
+      const generatedProfile = await callAI(sys, "请生成档案。");
+      setProfile(generatedProfile);
+      setProfileVersion("v1.0");
+      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: generatedProfile }) });
+      setNeedsOnboarding(false);
+    } catch {
+      // Fallback
+      const fb = "【基础设定】\n基于初始问答生成的档案失败，AI将通过后续用户的日记输入，逐渐了解。";
+      setProfile(fb);
+      setProfileVersion("v1.0");
+      setNeedsOnboarding(false);
+    }
+  };
+
+  const skipOnboarding = async () => {
+    const fb = "【基础设定】\nAI将基于空白预设，通过后续用户的日记输入，从零开始逐渐构建专属的性格档案。";
+    setProfile(fb);
+    setProfileVersion("v1.0");
+    await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
+    setNeedsOnboarding(false);
+  };
+
+  // ══════════════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════════════
   return (
@@ -903,475 +947,631 @@ ${profile}
 
       <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", color: "rgba(225,228,255,0.95)", fontFamily: "'Crimson Pro','Noto Serif SC',serif", display: "flex", flexDirection: "column" }}>
 
-        {/* ── REMINDER BUBBLE ── */}
-        {reminder && (
-          <div className={`bubble-pulse ${reminderDismissed ? "bubble-out" : "bubble-in"}`} style={{
-            position: "fixed", bottom: 28, right: 24, zIndex: 100, maxWidth: 280,
-            background: "linear-gradient(135deg,rgba(30,25,80,0.95),rgba(20,30,80,0.95))",
-            border: "1px solid rgba(160,140,255,0.5)", borderRadius: 16, padding: "16px 18px",
-            backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-            boxShadow: "0 8px 32px rgba(100,80,255,0.25)",
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(210,200,255,0.95)", lineHeight: 1.3 }}>{reminder.label}</div>
-              <button onClick={dismissReminder} style={{ background: "none", border: "none", color: "rgba(160,160,200,0.5)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 0 0 8px", flexShrink: 0 }}>×</button>
-            </div>
-            <div style={{ fontSize: 13, color: "rgba(170,175,230,0.75)", marginBottom: 14, lineHeight: 1.55 }}>{reminder.sub}</div>
-            <button onClick={() => goToSummaryFromReminder(reminder.type)} style={{
-              width: "100%", padding: "9px", borderRadius: 8, border: "none", cursor: "pointer",
-              background: "linear-gradient(135deg,rgba(130,110,255,0.85),rgba(90,150,255,0.85))",
-              color: "rgba(255,255,255,0.95)", fontSize: 13, fontFamily: "inherit", fontWeight: 600,
-            }}>去生成{reminder.type === "week" ? "周" : reminder.type === "month" ? "月" : "年"}度复盘</button>
-          </div>
-        )}
-
-        {/* ── HEADER ── */}
-        <header style={{ padding: "0 24px", borderBottom: "1px solid rgba(100,120,200,0.15)" }}>
-          <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 30, height: 30, background: "linear-gradient(135deg,rgba(100,120,255,0.8),rgba(160,100,255,0.8))", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 14px rgba(120,100,255,0.4)" }}>
-                <span style={{ fontSize: 15 }}>✦</span>
-              </div>
-              <span style={{ fontSize: 11, color: "rgba(160,175,230,0.65)", letterSpacing: ".22em" }}>PRIVATE JOURNAL</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: streak > 0 ? "rgba(255,180,60,0.08)" : "rgba(255,255,255,0.04)", border: `1px solid ${streak > 0 ? "rgba(255,180,60,0.25)" : "rgba(255,255,255,0.08)"}`, borderRadius: 20, padding: "4px 13px" }}>
-              <span style={{ fontSize: 13 }}>{streak > 0 ? "🔥" : "○"}</span>
-              <span style={{ fontSize: 12, color: streak > 0 ? "rgba(255,200,80,0.9)" : "rgba(140,140,180,0.5)" }}>
-                {streak > 0 ? `连续 ${streak} 天` : "今天还没写"}
-              </span>
-            </div>
-          </div>
-        </header>
-
-        {/* ── NAV ── */}
-        <nav style={{ padding: "0 24px", borderBottom: "1px solid rgba(100,120,200,0.12)" }}>
-          <div style={{ maxWidth: 700, margin: "0 auto", display: "flex" }}>
-            {[
-              { id: "write", label: "写今天" },
-              { id: "history", label: `过往${entries.length > 0 ? ` (${entries.length})` : ""}` },
-              { id: "summary", label: "AI 复盘" },
-              { id: "settings", label: "设置" },
-            ].map(t => (
-              <button key={t.id} className="nav-tab" onClick={() => setView(t.id)} style={{
-                background: "none", border: "none", padding: "11px 18px", fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", letterSpacing: ".04em",
-                color: view === t.id ? "rgba(200,210,255,0.98)" : "rgba(155,165,210,0.7)",
-                borderBottom: view === t.id ? "2px solid rgba(140,160,255,0.7)" : "2px solid transparent",
-                transition: "all .2s",
-              }}>{t.label}</button>
-            ))}
-          </div>
-        </nav>
-
-        {/* ── MAIN ── */}
-        <main style={{ flex: 1, padding: "28px 24px 72px", maxWidth: 700, width: "100%", margin: "0 auto" }}>
-
-          {/* ════════════ WRITE ════════════ */}
-          {view === "write" && (
-            <div className="anim-up">
-
-              {/* Late-night nudge */}
-              {lateNightNudge && !aiQuestion && (
-                <div className="anim-up" style={{ background: "rgba(60,40,120,0.35)", border: "1px solid rgba(140,120,255,0.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <div style={{ fontSize: 13, color: "rgba(210,205,255,0.9)", fontWeight: 600, marginBottom: 2 }}>🌙 22点了，今天还没写</div>
-                    <div style={{ fontSize: 12, color: "rgba(170,175,230,0.65)" }}>记录一天不用很久，三行也够</div>
-                  </div>
-                  <button onClick={() => setLateNightNudge(false)} style={{ background: "none", border: "none", color: "rgba(160,160,200,0.45)", cursor: "pointer", fontSize: 18, padding: "0 0 0 12px" }}>×</button>
-                </div>
-              )}
-
-              {/* Date selector row */}
-              {!aiQuestion && (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  {/* Current date or backdate picker */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <button onClick={() => { setIsBackdate(false); }} style={{
-                      padding: "5px 12px", borderRadius: 20, fontSize: 12, fontFamily: "inherit", cursor: "pointer", border: "none",
-                      background: !isBackdate ? "rgba(120,100,255,0.25)" : "rgba(255,255,255,0.05)",
-                      color: !isBackdate ? "rgba(200,190,255,0.95)" : "rgba(160,165,215,0.55)",
-                      fontWeight: !isBackdate ? 600 : 400, transition: "all .2s",
-                    }}>今天</button>
-                    {backdateOptions.map(o => (
-                      <button key={o.daysAgo} onClick={() => { setIsBackdate(true); setBackdateDay(o.daysAgo); }} style={{
-                        padding: "5px 12px", borderRadius: 20, fontSize: 12, fontFamily: "inherit", cursor: "pointer", border: "none",
-                        background: (isBackdate && backdateDay === o.daysAgo) ? "rgba(100,180,255,0.2)" : "rgba(255,255,255,0.05)",
-                        color: (isBackdate && backdateDay === o.daysAgo) ? "rgba(160,210,255,0.95)" : "rgba(140,160,210,0.5)",
-                        fontWeight: (isBackdate && backdateDay === o.daysAgo) ? 600 : 400, transition: "all .2s",
-                      }}>{o.label} <span style={{ fontSize: 10, opacity: .7 }}>补记</span></button>
-                    ))}
-                  </div>
-                  {wroteToday && !isBackdate && <span style={{ fontSize: 11, color: "rgba(100,200,150,0.8)", background: "rgba(60,160,100,0.1)", border: "1px solid rgba(80,180,120,0.25)", borderRadius: 12, padding: "3px 11px" }}>✓ 今天已记录</span>}
-                </div>
-              )}
-
-              {/* Backdate label */}
-              {isBackdate && !aiQuestion && (
-                <div style={{ fontSize: 11, color: "rgba(140,180,255,0.65)", letterSpacing: ".08em", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 13 }}>📅</span>
-                  补记 {backdateOptions.find(o => o.daysAgo === backdateDay)?.dateStr} 的日记
-                </div>
-              )}
-
-              {/* ── Phase 1: Write ── */}
-              {!aiQuestion && (
+        {/* ── ONBOARDING / SURVEY FLOW ── */}
+        {needsOnboarding ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <Glass style={{ width: "100%", maxWidth: 500, padding: "40px 30px", textAlign: "center" }} className="anim-up">
+              {onboardingStep === 0 && (
                 <>
-                  <Glass style={{ padding: "20px", marginBottom: 20 }}>
-                    <div style={labelStyle}>
-                      <span>{isBackdate ? `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么` : "今天发生了什么"}</span>
-                      {voiceOK && <VoiceBtn target="content" />}
-                    </div>
-                    <textarea value={content} onChange={e => setContent(e.target.value)} rows={7}
-                      placeholder={isBackdate ? "回忆一下那天——哪怕只是片段，写下来就有意义……" : "不用写得好，只要写得真。今天的情绪、遇到的事、脑子里转的东西……"}
-                      style={{ ...inputStyle, minHeight: 180 }}
-                    />
-                    {voiceErr && <p style={{ fontSize: 11, color: "rgba(255,130,90,0.8)", marginTop: 6 }}>{voiceErr}</p>}
-                  </Glass>
-
-                  <Divider />
-
-                  <Glass style={{ padding: "18px 20px", marginBottom: 20 }}>
-                    <div style={labelStyle}><span>{isBackdate ? "那天的心情" : "今天的心情"}</span></div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {MOODS.map(m => (
-                        <button key={m.v} className="mood-btn" onClick={() => setMood(m.v)} style={{
-                          width: 44, height: 44, borderRadius: "50%", cursor: "pointer", fontSize: 22,
-                          background: mood === m.v ? "rgba(100,120,255,0.15)" : "none",
-                          border: `1.5px solid ${mood === m.v ? "rgba(140,160,255,0.6)" : "transparent"}`,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                        }}>{m.emoji}</button>
-                      ))}
-                      <span style={{ fontSize: 13, color: "rgba(170,180,230,0.7)", marginLeft: 8 }}>{MOODS.find(m => m.v === mood)?.label}</span>
-                    </div>
-                  </Glass>
-
-                  <button className="btn-gold" onClick={doSave} disabled={saving || !content.trim()} style={{
-                    width: "100%", padding: "14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontFamily: "inherit", fontWeight: 600, letterSpacing: ".08em",
-                    background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
-                    color: "rgba(255,255,255,0.95)", boxShadow: "0 0 24px rgba(120,100,255,0.3)",
-                    opacity: saving || !content.trim() ? .5 : 1, transition: "all .2s",
-                  }}>{saving ? "保存中…" : isBackdate ? `补记${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || ""}的日记` : "保存日记 · 生成今日一问"}</button>
-
-                  {justSaved && !generatingQ && (
-                    <div className="anim-up" style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "rgba(100,200,150,0.8)" }}>
-                      ✓ 已保存{streak > 0 ? ` · 连续 ${streak} 天 🔥` : ""}
-                    </div>
-                  )}
+                  <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,230,255,0.95)", marginBottom: 16 }}>欢迎来到你的专属日记</h2>
+                  <p style={{ fontSize: 16, lineHeight: 1.8, color: "rgba(180,190,230,0.8)", marginBottom: 30 }}>
+                    在这里，AI 会根据你的性格给予最懂你的回应。
+                    <br />为了让它更了解你，我们准备了 3 个简单的小问题。
+                  </p>
+                  <button onClick={() => setOnboardingStep(1)} className="btn-gold" style={{ padding: "14px 30px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontFamily: "inherit", fontWeight: 600, background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white", marginBottom: 16, width: "100%" }}>
+                    开始设定 (1分钟)
+                  </button>
+                  <button onClick={skipOnboarding} style={{ background: "none", border: "none", color: "rgba(140,160,200,0.6)", cursor: "pointer", fontSize: 13, textDecoration: "underline" }}>
+                    跳过，让 AI 随时间慢慢懂我
+                  </button>
                 </>
               )}
 
-              {/* ── Phase 2: AI Question ── */}
-              {(generatingQ || aiQuestion) && (
-                <div className="anim-up">
-                  <div style={{ textAlign: "center", marginBottom: 20 }}>
-                    <div style={{ fontSize: 11, color: "rgba(140,160,220,0.5)", letterSpacing: ".15em", marginBottom: 6 }}>日记已保存 · 正在为你生成今日一问</div>
-                    <div style={{ height: 1, background: "linear-gradient(to right,transparent,rgba(120,100,255,0.4),transparent)" }} />
+              {onboardingStep === 1 && (
+                <>
+                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>1 / 3</div>
+                  <h3 style={{ fontSize: 18, marginBottom: 24, color: "rgba(210,220,255,0.9)" }}>面对压力或挫折时，你通常的第一反应是？</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {["倾向逃避，想刷手机转移注意力", "内耗自责，觉得自己不够好", "硬抗死磕，想马上解决", "找信任的人倾诉"].map(opt => (
+                      <button key={opt} onClick={() => setObAnswers(p => ({ ...p, q1: opt }))} style={{
+                        padding: "13px 14px", borderRadius: 8, textAlign: "left",
+                        background: obAnswers.q1 === opt ? "rgba(120,100,255,0.25)" : "rgba(80,100,160,0.15)",
+                        border: `1px solid ${obAnswers.q1 === opt ? "rgba(160,140,255,0.7)" : "rgba(120,140,200,0.3)"}`,
+                        color: "rgba(200,210,255,0.9)", cursor: "pointer", fontSize: 14, transition: "all .2s"
+                      }}>
+                        {opt}
+                      </button>
+                    ))}
+                    <div style={{ position: "relative", marginTop: 4 }}>
+                      <input
+                        type="text"
+                        value={obAnswers.q1}
+                        onChange={e => setObAnswers(p => ({ ...p, q1: e.target.value }))}
+                        placeholder="或者用自己的话说……"
+                        style={{
+                          width: "100%", padding: "11px 14px", borderRadius: 8,
+                          background: "rgba(10,14,42,0.5)",
+                          border: "1px solid rgba(120,140,220,0.28)",
+                          color: "rgba(235,238,255,0.95)",
+                          fontFamily: "'Crimson Pro','Noto Serif SC',serif",
+                          fontSize: 14, outline: "none"
+                        }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => { if (obAnswers.q1.trim()) setOnboardingStep(2); }}
+                      disabled={!obAnswers.q1.trim()}
+                      style={{
+                        marginTop: 4, padding: "13px", borderRadius: 8, border: "none", cursor: obAnswers.q1.trim() ? "pointer" : "not-allowed",
+                        background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
+                        color: "white", fontWeight: 600, fontSize: 14, opacity: obAnswers.q1.trim() ? 1 : 0.4,
+                        transition: "all .2s"
+                      }}
+                    >
+                      下一题 →
+                    </button>
                   </div>
+                </>
+              )}
 
-                  <Glass style={{ padding: "22px", marginBottom: 18, borderLeft: "3px solid rgba(140,120,255,0.6)" }}>
-                    {generatingQ
-                      ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>正在读取你今天写的内容，为你生成专属问题…</p>
-                      : <p style={{ fontSize: 17, lineHeight: 1.8, color: "rgba(220,225,255,0.92)", fontStyle: "italic" }}>{aiQuestion}</p>
-                    }
-                  </Glass>
+              {onboardingStep === 2 && (
+                <>
+                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>2 / 3</div>
+                  <h3 style={{ fontSize: 18, marginBottom: 24, color: "rgba(210,220,255,0.9)" }}>在执行计划时，你属于哪种类型？</h3>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {["完美主义的拖延症（等准备好再说）", "三分钟热度（开始很猛，很难坚持）", "想到就做（行动力强但缺乏规划）", "按部就班（稳扎稳打型）"].map(opt => (
+                      <button key={opt} onClick={() => setObAnswers(p => ({ ...p, q2: opt }))} style={{
+                        padding: "13px 14px", borderRadius: 8, textAlign: "left",
+                        background: obAnswers.q2 === opt ? "rgba(120,100,255,0.25)" : "rgba(80,100,160,0.15)",
+                        border: `1px solid ${obAnswers.q2 === opt ? "rgba(160,140,255,0.7)" : "rgba(120,140,200,0.3)"}`,
+                        color: "rgba(200,210,255,0.9)", cursor: "pointer", fontSize: 14, transition: "all .2s"
+                      }}>
+                        {opt}
+                      </button>
+                    ))}
+                    <div style={{ position: "relative", marginTop: 4 }}>
+                      <input
+                        type="text"
+                        value={obAnswers.q2}
+                        onChange={e => setObAnswers(p => ({ ...p, q2: e.target.value }))}
+                        placeholder="或者用自己的话说……"
+                        style={{
+                          width: "100%", padding: "11px 14px", borderRadius: 8,
+                          background: "rgba(10,14,42,0.5)",
+                          border: "1px solid rgba(120,140,220,0.28)",
+                          color: "rgba(235,238,255,0.95)",
+                          fontFamily: "'Crimson Pro','Noto Serif SC',serif",
+                          fontSize: 14, outline: "none"
+                        }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => { if (obAnswers.q2.trim()) setOnboardingStep(3); }}
+                      disabled={!obAnswers.q2.trim()}
+                      style={{
+                        marginTop: 4, padding: "13px", borderRadius: 8, border: "none", cursor: obAnswers.q2.trim() ? "pointer" : "not-allowed",
+                        background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
+                        color: "white", fontWeight: 600, fontSize: 14, opacity: obAnswers.q2.trim() ? 1 : 0.4,
+                        transition: "all .2s"
+                      }}
+                    >
+                      下一题 →
+                    </button>
+                  </div>
+                </>
+              )}
 
-                  {!generatingQ && (
-                    <>
-                      <Glass style={{ padding: "18px 20px", marginBottom: 18 }}>
-                        <div style={labelStyle}>
-                          <span>你的回答</span>
-                          {voiceOK && <VoiceBtn target="answer" />}
-                        </div>
-                        <textarea value={aiAnswer} onChange={e => setAiAnswer(e.target.value)} rows={5}
-                          placeholder="诚实比深刻重要。哪怕只写「我不知道」……"
-                          style={{ ...inputStyle, minHeight: 120 }}
-                        />
-                      </Glass>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <button className="btn-gold" onClick={saveAnswer} disabled={savingAnswer} style={{
-                          flex: 1, padding: "13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 600,
-                          background: "linear-gradient(135deg,rgba(120,100,255,0.8),rgba(80,150,255,0.8))",
-                          color: "rgba(255,255,255,0.95)", opacity: savingAnswer ? .5 : 1,
-                        }}>{savingAnswer ? "保存中…" : "保存回答，完成今天"}</button>
-                        <button onClick={() => { setAiQuestion(null); setAiAnswer(""); setContent(""); setMood(3); }} style={{
-                          padding: "13px 16px", borderRadius: 8, background: "none", border: "1px solid rgba(100,120,200,0.25)", color: "rgba(140,160,200,0.5)", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
-                        }}>跳过</button>
+              {onboardingStep === 3 && (
+                <>
+                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>3 / 3</div>
+                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "rgba(210,220,255,0.9)" }}>最后，有什么是你希望日记本特别注意的？</h3>
+                  <p style={{ fontSize: 13, color: "rgba(150,160,200,0.7)", marginBottom: 20 }}>比如：不要给我打鸡血、我很容易嫉妒同龄人、多鼓励我...</p>
+                  <textarea
+                    value={obAnswers.extra}
+                    onChange={e => setObAnswers(p => ({ ...p, extra: e.target.value }))}
+                    placeholder="选填，畅所欲言..."
+                    style={{
+                      width: "100%", background: "rgba(10,14,42,0.5)",
+                      border: "1px solid rgba(120,140,220,0.28)", borderRadius: 8,
+                      color: "rgba(235,238,255,0.95)", fontFamily: "'Crimson Pro','Noto Serif SC',serif",
+                      fontSize: 16, lineHeight: 1.9, padding: "14px 16px", minHeight: 120, marginBottom: 20
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <button onClick={() => setOnboardingStep(2)} style={{ padding: "14px", borderRadius: 8, background: "none", border: "1px solid rgba(120,140,200,0.3)", color: "rgba(180,190,230,0.8)", cursor: "pointer", flex: 1 }}>
+                      上一步
+                    </button>
+                    <button onClick={handleOnboardingSubmit} className="btn-gold" style={{ padding: "14px", borderRadius: 8, border: "none", cursor: "pointer", flex: 2, background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white", fontWeight: 600 }}>
+                      生成我的档案
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {onboardingStep === 4 && (
+                <div style={{ padding: "40px 0" }}>
+                  <div className="generating" style={{ fontSize: 32, marginBottom: 20 }}>✦</div>
+                  <h3 style={{ fontSize: 18, color: "rgba(210,220,255,0.9)", marginBottom: 10 }}>正在为你侧写专属档案...</h3>
+                  <p style={{ fontSize: 14, color: "rgba(150,160,200,0.7)" }}>请稍候，马上开启你的日记旅程</p>
+                </div>
+              )}
+            </Glass>
+          </div>
+        ) : (
+          /* ── MAIN APP CONTENT ── */
+          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+
+            {/* ── REMINDER BUBBLE ── */}
+            {reminder && (
+              <div className={`bubble-pulse ${reminderDismissed ? "bubble-out" : "bubble-in"}`} style={{
+                position: "fixed", bottom: 28, right: 24, zIndex: 100, maxWidth: 280,
+                background: "linear-gradient(135deg,rgba(30,25,80,0.95),rgba(20,30,80,0.95))",
+                border: "1px solid rgba(160,140,255,0.5)", borderRadius: 16, padding: "16px 18px",
+                backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                boxShadow: "0 8px 32px rgba(100,80,255,0.25)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(210,200,255,0.95)", lineHeight: 1.3 }}>{reminder.label}</div>
+                  <button onClick={dismissReminder} style={{ background: "none", border: "none", color: "rgba(160,160,200,0.5)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 0 0 8px", flexShrink: 0 }}>×</button>
+                </div>
+                <div style={{ fontSize: 13, color: "rgba(170,175,230,0.75)", marginBottom: 14, lineHeight: 1.55 }}>{reminder.sub}</div>
+                <button onClick={() => goToSummaryFromReminder(reminder.type)} style={{
+                  width: "100%", padding: "9px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: "linear-gradient(135deg,rgba(130,110,255,0.85),rgba(90,150,255,0.85))",
+                  color: "rgba(255,255,255,0.95)", fontSize: 13, fontFamily: "inherit", fontWeight: 600,
+                }}>去生成{reminder.type === "week" ? "周" : reminder.type === "month" ? "月" : "年"}度复盘</button>
+              </div>
+            )}
+
+            {/* ── HEADER ── */}
+            <header style={{ padding: "0 24px", borderBottom: "1px solid rgba(100,120,200,0.15)" }}>
+              <div style={{ maxWidth: 700, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", height: 54 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 30, height: 30, background: "linear-gradient(135deg,rgba(100,120,255,0.8),rgba(160,100,255,0.8))", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 14px rgba(120,100,255,0.4)" }}>
+                    <span style={{ fontSize: 15 }}>✦</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "rgba(160,175,230,0.65)", letterSpacing: ".22em" }}>PRIVATE JOURNAL</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, background: streak > 0 ? "rgba(255,180,60,0.08)" : "rgba(255,255,255,0.04)", border: `1px solid ${streak > 0 ? "rgba(255,180,60,0.25)" : "rgba(255,255,255,0.08)"}`, borderRadius: 20, padding: "4px 13px" }}>
+                  <span style={{ fontSize: 13 }}>{streak > 0 ? "🔥" : "○"}</span>
+                  <span style={{ fontSize: 12, color: streak > 0 ? "rgba(255,200,80,0.9)" : "rgba(140,140,180,0.5)" }}>
+                    {streak > 0 ? `连续 ${streak} 天` : "今天还没写"}
+                  </span>
+                </div>
+              </div>
+            </header>
+
+            {/* ── NAV ── */}
+            <nav style={{ padding: "0 24px", borderBottom: "1px solid rgba(100,120,200,0.12)" }}>
+              <div style={{ maxWidth: 700, margin: "0 auto", display: "flex" }}>
+                {[
+                  { id: "write", label: "写今天" },
+                  { id: "history", label: `过往${entries.length > 0 ? ` (${entries.length})` : ""}` },
+                  { id: "summary", label: "AI 复盘" },
+                  { id: "settings", label: "设置" },
+                ].map(t => (
+                  <button key={t.id} className="nav-tab" onClick={() => setView(t.id)} style={{
+                    background: "none", border: "none", padding: "11px 18px", fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", letterSpacing: ".04em",
+                    color: view === t.id ? "rgba(200,210,255,0.98)" : "rgba(155,165,210,0.7)",
+                    borderBottom: view === t.id ? "2px solid rgba(140,160,255,0.7)" : "2px solid transparent",
+                    transition: "all .2s",
+                  }}>{t.label}</button>
+                ))}
+              </div>
+            </nav>
+
+            {/* ── MAIN ── */}
+            <main style={{ flex: 1, padding: "28px 24px 72px", maxWidth: 700, width: "100%", margin: "0 auto" }}>
+
+              {/* ════════════ WRITE ════════════ */}
+              {view === "write" && (
+                <div className="anim-up">
+
+                  {/* Late-night nudge */}
+                  {lateNightNudge && !aiQuestion && (
+                    <div className="anim-up" style={{ background: "rgba(60,40,120,0.35)", border: "1px solid rgba(140,120,255,0.3)", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 13, color: "rgba(210,205,255,0.9)", fontWeight: 600, marginBottom: 2 }}>🌙 22点了，今天还没写</div>
+                        <div style={{ fontSize: 12, color: "rgba(170,175,230,0.65)" }}>记录一天不用很久，三行也够</div>
                       </div>
+                      <button onClick={() => setLateNightNudge(false)} style={{ background: "none", border: "none", color: "rgba(160,160,200,0.45)", cursor: "pointer", fontSize: 18, padding: "0 0 0 12px" }}>×</button>
+                    </div>
+                  )}
+
+                  {/* Date selector row */}
+                  {!aiQuestion && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                      {/* Current date or backdate picker */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={() => { setIsBackdate(false); }} style={{
+                          padding: "5px 12px", borderRadius: 20, fontSize: 12, fontFamily: "inherit", cursor: "pointer", border: "none",
+                          background: !isBackdate ? "rgba(120,100,255,0.25)" : "rgba(255,255,255,0.05)",
+                          color: !isBackdate ? "rgba(200,190,255,0.95)" : "rgba(160,165,215,0.55)",
+                          fontWeight: !isBackdate ? 600 : 400, transition: "all .2s",
+                        }}>今天</button>
+                        {backdateOptions.map(o => (
+                          <button key={o.daysAgo} onClick={() => { setIsBackdate(true); setBackdateDay(o.daysAgo); }} style={{
+                            padding: "5px 12px", borderRadius: 20, fontSize: 12, fontFamily: "inherit", cursor: "pointer", border: "none",
+                            background: (isBackdate && backdateDay === o.daysAgo) ? "rgba(100,180,255,0.2)" : "rgba(255,255,255,0.05)",
+                            color: (isBackdate && backdateDay === o.daysAgo) ? "rgba(160,210,255,0.95)" : "rgba(140,160,210,0.5)",
+                            fontWeight: (isBackdate && backdateDay === o.daysAgo) ? 600 : 400, transition: "all .2s",
+                          }}>{o.label} <span style={{ fontSize: 10, opacity: .7 }}>补记</span></button>
+                        ))}
+                      </div>
+                      {wroteToday && !isBackdate && <span style={{ fontSize: 11, color: "rgba(100,200,150,0.8)", background: "rgba(60,160,100,0.1)", border: "1px solid rgba(80,180,120,0.25)", borderRadius: 12, padding: "3px 11px" }}>✓ 今天已记录</span>}
+                    </div>
+                  )}
+
+                  {/* Backdate label */}
+                  {isBackdate && !aiQuestion && (
+                    <div style={{ fontSize: 11, color: "rgba(140,180,255,0.65)", letterSpacing: ".08em", marginBottom: 16, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>📅</span>
+                      补记 {backdateOptions.find(o => o.daysAgo === backdateDay)?.dateStr} 的日记
+                    </div>
+                  )}
+
+                  {/* ── Phase 1: Write ── */}
+                  {!aiQuestion && (
+                    <>
+                      <Glass style={{ padding: "20px", marginBottom: 20 }}>
+                        <div style={labelStyle}>
+                          <span>{isBackdate ? `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么` : "今天发生了什么"}</span>
+                          {voiceOK && <VoiceBtn target="content" />}
+                        </div>
+                        <textarea value={content} onChange={e => setContent(e.target.value)} rows={7}
+                          placeholder={isBackdate ? "回忆一下那天——哪怕只是片段，写下来就有意义……" : "不用写得好，只要写得真。今天的情绪、遇到的事、脑子里转的东西……"}
+                          style={{ ...inputStyle, minHeight: 180 }}
+                        />
+                        {voiceErr && <p style={{ fontSize: 11, color: "rgba(255,130,90,0.8)", marginTop: 6 }}>{voiceErr}</p>}
+                      </Glass>
+
+                      <Divider />
+
+                      <Glass style={{ padding: "18px 20px", marginBottom: 20 }}>
+                        <div style={labelStyle}><span>{isBackdate ? "那天的心情" : "今天的心情"}</span></div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {MOODS.map(m => (
+                            <button key={m.v} className="mood-btn" onClick={() => setMood(m.v)} style={{
+                              width: 44, height: 44, borderRadius: "50%", cursor: "pointer", fontSize: 22,
+                              background: mood === m.v ? "rgba(100,120,255,0.15)" : "none",
+                              border: `1.5px solid ${mood === m.v ? "rgba(140,160,255,0.6)" : "transparent"}`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>{m.emoji}</button>
+                          ))}
+                          <span style={{ fontSize: 13, color: "rgba(170,180,230,0.7)", marginLeft: 8 }}>{MOODS.find(m => m.v === mood)?.label}</span>
+                        </div>
+                      </Glass>
+
+                      <button className="btn-gold" onClick={doSave} disabled={saving || !content.trim()} style={{
+                        width: "100%", padding: "14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontFamily: "inherit", fontWeight: 600, letterSpacing: ".08em",
+                        background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
+                        color: "rgba(255,255,255,0.95)", boxShadow: "0 0 24px rgba(120,100,255,0.3)",
+                        opacity: saving || !content.trim() ? .5 : 1, transition: "all .2s",
+                      }}>{saving ? "保存中…" : isBackdate ? `补记${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || ""}的日记` : "保存日记 · 生成今日一问"}</button>
+
+                      {justSaved && !generatingQ && (
+                        <div className="anim-up" style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "rgba(100,200,150,0.8)" }}>
+                          ✓ 已保存{streak > 0 ? ` · 连续 ${streak} 天 🔥` : ""}
+                        </div>
+                      )}
                     </>
+                  )}
+
+                  {/* ── Phase 2: AI Question ── */}
+                  {(generatingQ || aiQuestion) && (
+                    <div className="anim-up">
+                      <div style={{ textAlign: "center", marginBottom: 20 }}>
+                        <div style={{ fontSize: 11, color: "rgba(140,160,220,0.5)", letterSpacing: ".15em", marginBottom: 6 }}>日记已保存 · 正在为你生成今日一问</div>
+                        <div style={{ height: 1, background: "linear-gradient(to right,transparent,rgba(120,100,255,0.4),transparent)" }} />
+                      </div>
+
+                      <Glass style={{ padding: "22px", marginBottom: 18, borderLeft: "3px solid rgba(140,120,255,0.6)" }}>
+                        {generatingQ
+                          ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>正在读取你今天写的内容，为你生成专属问题…</p>
+                          : <p style={{ fontSize: 17, lineHeight: 1.8, color: "rgba(220,225,255,0.92)", fontStyle: "italic" }}>{aiQuestion}</p>
+                        }
+                      </Glass>
+
+                      {!generatingQ && (
+                        <>
+                          <Glass style={{ padding: "18px 20px", marginBottom: 18 }}>
+                            <div style={labelStyle}>
+                              <span>你的回答</span>
+                              {voiceOK && <VoiceBtn target="answer" />}
+                            </div>
+                            <textarea value={aiAnswer} onChange={e => setAiAnswer(e.target.value)} rows={5}
+                              placeholder="诚实比深刻重要。哪怕只写「我不知道」……"
+                              style={{ ...inputStyle, minHeight: 120 }}
+                            />
+                          </Glass>
+                          <div style={{ display: "flex", gap: 10 }}>
+                            <button className="btn-gold" onClick={saveAnswer} disabled={savingAnswer} style={{
+                              flex: 1, padding: "13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 600,
+                              background: "linear-gradient(135deg,rgba(120,100,255,0.8),rgba(80,150,255,0.8))",
+                              color: "rgba(255,255,255,0.95)", opacity: savingAnswer ? .5 : 1,
+                            }}>{savingAnswer ? "保存中…" : "保存回答，完成今天"}</button>
+                            <button onClick={() => { setAiQuestion(null); setAiAnswer(""); setContent(""); setMood(3); }} style={{
+                              padding: "13px 16px", borderRadius: 8, background: "none", border: "1px solid rgba(100,120,200,0.25)", color: "rgba(140,160,200,0.5)", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
+                            }}>跳过</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ════════════ HISTORY ════════════ */}
-          {view === "history" && (
-            <div className="anim-up">
-              <div style={{ fontSize: 12, color: "rgba(170,180,230,0.65)", letterSpacing: ".08em", marginBottom: 22 }}>
-                共 {entries.length} 篇 · 当前连续 {streak} 天
-              </div>
-              {loading && <div style={{ textAlign: "center", color: "rgba(140,160,200,0.3)", padding: "60px 0" }}>加载中…</div>}
-              {!loading && entries.length === 0 && (
-                <div style={{ textAlign: "center", color: "rgba(140,160,200,0.3)", padding: "80px 0", lineHeight: 2.5 }}>
-                  <div style={{ fontSize: 40, marginBottom: 12, opacity: .5 }}>✦</div>
-                  还没有日记<br /><span style={{ fontSize: 12 }}>去「写今天」开始第一篇吧</span>
+              {/* ════════════ HISTORY ════════════ */}
+              {view === "history" && (
+                <div className="anim-up">
+                  <div style={{ fontSize: 12, color: "rgba(170,180,230,0.65)", letterSpacing: ".08em", marginBottom: 22 }}>
+                    共 {entries.length} 篇 · 当前连续 {streak} 天
+                  </div>
+                  {loading && <div style={{ textAlign: "center", color: "rgba(140,160,200,0.3)", padding: "60px 0" }}>加载中…</div>}
+                  {!loading && entries.length === 0 && (
+                    <div style={{ textAlign: "center", color: "rgba(140,160,200,0.3)", padding: "80px 0", lineHeight: 2.5 }}>
+                      <div style={{ fontSize: 40, marginBottom: 12, opacity: .5 }}>✦</div>
+                      还没有日记<br /><span style={{ fontSize: 12 }}>去「写今天」开始第一篇吧</span>
+                    </div>
+                  )}
+                  {entries.map(entry => {
+                    const isExp = expanded === entry.id;
+                    const m = MOODS.find(m => m.v === entry.mood);
+                    return (
+                      <Glass key={entry.id} className="hover-lift" onClick={() => !confirmDel && setExpanded(isExp ? null : entry.id)} style={{ marginBottom: 10, cursor: "pointer", overflow: "hidden" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+                              <span style={{ fontSize: 11, color: "rgba(170,180,230,0.7)", letterSpacing: ".04em" }}>{fmtDate(entry.date)}</span>
+                              <span style={{ fontSize: 10, color: "rgba(120,140,200,0.4)" }}>·</span>
+                              <span style={{ fontSize: 11, color: "rgba(150,160,215,0.6)" }}>{fmtTime(entry.date)}</span>
+                              <span style={{ fontSize: 14 }}>{m?.emoji}</span>
+                              {entry.isBackdate && <span style={{ fontSize: 9, color: "rgba(100,180,255,0.7)", background: "rgba(60,120,200,0.15)", border: "1px solid rgba(80,150,220,0.25)", borderRadius: 8, padding: "1px 6px", letterSpacing: ".05em" }}>补记</span>}
+                            </div>
+                            <div style={{ fontSize: 13.5, color: "rgba(200,205,240,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "88%" }}>
+                              {entry.content || "（无内容）"}
+                            </div>
+                          </div>
+                          <span style={{ color: "rgba(120,140,200,0.35)", fontSize: 11, marginLeft: 8 }}>{isExp ? "▲" : "▼"}</span>
+                        </div>
+                        {isExp && (
+                          <div onClick={e => e.stopPropagation()} style={{ borderTop: "1px solid rgba(100,120,200,0.15)", padding: "16px" }}>
+                            <p style={{ fontSize: 15, lineHeight: 1.9, color: "rgba(210,215,255,0.8)", whiteSpace: "pre-wrap", marginBottom: 16 }}>{entry.content}</p>
+                            {entry.question && (
+                              <div style={{ background: "rgba(100,80,200,0.1)", borderLeft: "2px solid rgba(140,120,255,0.5)", padding: "12px 14px", borderRadius: 6, marginBottom: 16 }}>
+                                <p style={{ fontSize: 12, color: "rgba(160,140,255,0.8)", marginBottom: 8, fontStyle: "italic" }}>{entry.question}</p>
+                                <p style={{ fontSize: 14, color: "rgba(180,185,230,0.65)", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>{entry.answer || "（未作答）"}</p>
+                              </div>
+                            )}
+                            {confirmDel === entry.id ? (
+                              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <span style={{ fontSize: 12, color: "rgba(180,185,230,0.5)" }}>确定删除这篇？</span>
+                                <button onClick={() => doDelete(entry.id)} style={{ background: "rgba(200,60,40,0.15)", border: "1px solid rgba(200,80,60,0.4)", borderRadius: 6, color: "rgba(255,120,100,0.85)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>删除</button>
+                                <button onClick={() => setConfirmDel(null)} style={{ background: "none", border: "1px solid rgba(100,120,200,0.25)", borderRadius: 6, color: "rgba(140,160,200,0.5)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>取消</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => setConfirmDel(entry.id)} style={{ background: "none", border: "1px solid rgba(100,120,200,0.18)", borderRadius: 6, color: "rgba(120,140,180,0.4)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>🗑 删除</button>
+                            )}
+                          </div>
+                        )}
+                      </Glass>
+                    );
+                  })}
                 </div>
               )}
-              {entries.map(entry => {
-                const isExp = expanded === entry.id;
-                const m = MOODS.find(m => m.v === entry.mood);
-                return (
-                  <Glass key={entry.id} className="hover-lift" onClick={() => !confirmDel && setExpanded(isExp ? null : entry.id)} style={{ marginBottom: 10, cursor: "pointer", overflow: "hidden" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-                          <span style={{ fontSize: 11, color: "rgba(170,180,230,0.7)", letterSpacing: ".04em" }}>{fmtDate(entry.date)}</span>
-                          <span style={{ fontSize: 10, color: "rgba(120,140,200,0.4)" }}>·</span>
-                          <span style={{ fontSize: 11, color: "rgba(150,160,215,0.6)" }}>{fmtTime(entry.date)}</span>
-                          <span style={{ fontSize: 14 }}>{m?.emoji}</span>
-                          {entry.isBackdate && <span style={{ fontSize: 9, color: "rgba(100,180,255,0.7)", background: "rgba(60,120,200,0.15)", border: "1px solid rgba(80,150,220,0.25)", borderRadius: 8, padding: "1px 6px", letterSpacing: ".05em" }}>补记</span>}
-                        </div>
-                        <div style={{ fontSize: 13.5, color: "rgba(200,205,240,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "88%" }}>
-                          {entry.content || "（无内容）"}
-                        </div>
-                      </div>
-                      <span style={{ color: "rgba(120,140,200,0.35)", fontSize: 11, marginLeft: 8 }}>{isExp ? "▲" : "▼"}</span>
-                    </div>
-                    {isExp && (
-                      <div onClick={e => e.stopPropagation()} style={{ borderTop: "1px solid rgba(100,120,200,0.15)", padding: "16px" }}>
-                        <p style={{ fontSize: 15, lineHeight: 1.9, color: "rgba(210,215,255,0.8)", whiteSpace: "pre-wrap", marginBottom: 16 }}>{entry.content}</p>
-                        {entry.question && (
-                          <div style={{ background: "rgba(100,80,200,0.1)", borderLeft: "2px solid rgba(140,120,255,0.5)", padding: "12px 14px", borderRadius: 6, marginBottom: 16 }}>
-                            <p style={{ fontSize: 12, color: "rgba(160,140,255,0.8)", marginBottom: 8, fontStyle: "italic" }}>{entry.question}</p>
-                            <p style={{ fontSize: 14, color: "rgba(180,185,230,0.65)", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>{entry.answer || "（未作答）"}</p>
-                          </div>
-                        )}
-                        {confirmDel === entry.id ? (
-                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                            <span style={{ fontSize: 12, color: "rgba(180,185,230,0.5)" }}>确定删除这篇？</span>
-                            <button onClick={() => doDelete(entry.id)} style={{ background: "rgba(200,60,40,0.15)", border: "1px solid rgba(200,80,60,0.4)", borderRadius: 6, color: "rgba(255,120,100,0.85)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>删除</button>
-                            <button onClick={() => setConfirmDel(null)} style={{ background: "none", border: "1px solid rgba(100,120,200,0.25)", borderRadius: 6, color: "rgba(140,160,200,0.5)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>取消</button>
-                          </div>
-                        ) : (
-                          <button onClick={() => setConfirmDel(entry.id)} style={{ background: "none", border: "1px solid rgba(100,120,200,0.18)", borderRadius: 6, color: "rgba(120,140,180,0.4)", cursor: "pointer", fontSize: 11, padding: "4px 11px", fontFamily: "inherit" }}>🗑 删除</button>
-                        )}
-                      </div>
+
+              {/* ════════════ SUMMARY ════════════ */}
+              {view === "summary" && (
+                <div className="anim-up">
+                  <div style={{ fontSize: 13, color: "rgba(170,180,230,0.7)", marginBottom: 22, lineHeight: 1.8 }}>
+                    AI 会分层总结：周复盘看日记，上月复盘整合周复盘，去年复盘整合月复盘。<br />
+                    <span style={{ color: "rgba(150,160,210,0.55)" }}>周日可生成「本周」，周一到周六可生成「上周」。上月/去年随时可生成（每个时段限一次）。</span>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+                    {[
+                      { id: "week", label: new Date().getDay() === 0 ? "本周" : "上周", min: 5 },
+                      { id: "month", label: "上月", min: 15 },
+                      { id: "year", label: "去年", min: 180 }
+                    ].map(t => {
+                      const count = countRange(t.id);
+                      const meetsThreshold = count >= t.min;
+
+                      // Check if this period already has a summary
+                      const now = new Date();
+                      const dayOfWeek = now.getDay();
+                      let periodKey = "";
+
+                      if (t.id === "week") {
+                        let rangeStart = new Date();
+                        let rangeEnd = new Date();
+                        if (dayOfWeek === 0) {
+                          rangeStart.setDate(now.getDate() - 6);
+                        } else {
+                          rangeEnd.setDate(now.getDate() - dayOfWeek);
+                          rangeStart.setDate(rangeEnd.getDate() - 6);
+                        }
+                        const midWeek = new Date((rangeStart.getTime() + rangeEnd.getTime()) / 2);
+                        const firstDayOfYear = new Date(midWeek.getFullYear(), 0, 1);
+                        const firstMonday = new Date(firstDayOfYear);
+                        const dayOfWeekFirst = firstDayOfYear.getDay();
+                        const daysToMonday = dayOfWeekFirst === 0 ? 1 : (8 - dayOfWeekFirst) % 7;
+                        firstMonday.setDate(firstDayOfYear.getDate() + daysToMonday);
+                        const weekNum = Math.ceil((midWeek - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
+                        periodKey = `${midWeek.getFullYear()}-W${weekNum.toString().padStart(2, "0")}`;
+                      } else if (t.id === "month") {
+                        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                        periodKey = `${lastMonth.getFullYear()}-${(lastMonth.getMonth() + 1).toString().padStart(2, "0")}`;
+                      } else {
+                        periodKey = `${now.getFullYear() - 1}`;
+                      }
+
+                      const alreadyGenerated = summaryHistory.some(s => s.type === t.id && s.periodKey === periodKey);
+                      const enabled = meetsThreshold && !alreadyGenerated;
+
+                      return (
+                        <button key={t.id} onClick={() => { if (enabled) { setSumType(t.id); } }} disabled={!enabled} style={{
+                          padding: "8px 16px", borderRadius: 8, cursor: enabled ? "pointer" : "not-allowed", fontSize: 13, fontFamily: "inherit",
+                          background: sumType === t.id ? "rgba(120,100,255,0.25)" : "rgba(15,18,45,0.6)",
+                          border: `1px solid ${sumType === t.id ? "rgba(140,120,255,0.6)" : "rgba(100,120,200,0.2)"}`,
+                          color: enabled ? (sumType === t.id ? "rgba(210,200,255,0.98)" : "rgba(160,170,220,0.7)") : "rgba(100,110,150,0.35)",
+                          fontWeight: sumType === t.id ? 600 : 400, transition: "all .2s",
+                          opacity: enabled ? 1 : 0.5,
+                        }}>
+                          {t.label} <span style={{ fontSize: 10, opacity: .7 }}>
+                            {alreadyGenerated ? "✓已生成" : `${count}/${t.min}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <button className="btn-primary" onClick={genSummary} disabled={sumLoading} style={{
+                      padding: "8px 18px", borderRadius: 8, background: "none", border: "1px solid rgba(140,160,255,0.4)",
+                      color: "rgba(160,180,255,0.85)", cursor: "pointer", fontSize: 13, fontFamily: "inherit", opacity: sumLoading ? .5 : 1,
+                    }}>{sumLoading ? "生成中…" : "生成复盘"}</button>
+                  </div>
+
+                  <Glass style={{ padding: "22px", minHeight: 220, fontSize: 15, lineHeight: 1.95, color: sumText ? "rgba(210,215,255,0.88)" : "rgba(100,120,180,0.35)", fontStyle: sumText ? "normal" : "italic" }}>
+                    {sumLoading ? (
+                      <span className="generating">正在深入分析你的日记…</span>
+                    ) : sumText ? (
+                      <div dangerouslySetInnerHTML={{ __html: parseMarkdown(sumText) }} />
+                    ) : (
+                      "选择时间范围，点击「生成复盘」"
                     )}
                   </Glass>
-                );
-              })}
-            </div>
-          )}
 
-          {/* ════════════ SUMMARY ════════════ */}
-          {view === "summary" && (
-            <div className="anim-up">
-              <div style={{ fontSize: 13, color: "rgba(170,180,230,0.7)", marginBottom: 22, lineHeight: 1.8 }}>
-                AI 会分层总结：周复盘看日记，上月复盘整合周复盘，去年复盘整合月复盘。<br />
-                <span style={{ color: "rgba(150,160,210,0.55)" }}>周日可生成「本周」，周一到周六可生成「上周」。上月/去年随时可生成（每个时段限一次）。</span>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
-                {[
-                  { id: "week", label: new Date().getDay() === 0 ? "本周" : "上周", min: 5 },
-                  { id: "month", label: "上月", min: 15 },
-                  { id: "year", label: "去年", min: 180 }
-                ].map(t => {
-                  const count = countRange(t.id);
-                  const meetsThreshold = count >= t.min;
-
-                  // Check if this period already has a summary
-                  const now = new Date();
-                  const dayOfWeek = now.getDay();
-                  let periodKey = "";
-
-                  if (t.id === "week") {
-                    let rangeStart = new Date();
-                    let rangeEnd = new Date();
-                    if (dayOfWeek === 0) {
-                      rangeStart.setDate(now.getDate() - 6);
-                    } else {
-                      rangeEnd.setDate(now.getDate() - dayOfWeek);
-                      rangeStart.setDate(rangeEnd.getDate() - 6);
-                    }
-                    const midWeek = new Date((rangeStart.getTime() + rangeEnd.getTime()) / 2);
-                    const firstDayOfYear = new Date(midWeek.getFullYear(), 0, 1);
-                    const firstMonday = new Date(firstDayOfYear);
-                    const dayOfWeekFirst = firstDayOfYear.getDay();
-                    const daysToMonday = dayOfWeekFirst === 0 ? 1 : (8 - dayOfWeekFirst) % 7;
-                    firstMonday.setDate(firstDayOfYear.getDate() + daysToMonday);
-                    const weekNum = Math.ceil((midWeek - firstMonday) / (7 * 24 * 60 * 60 * 1000)) + 1;
-                    periodKey = `${midWeek.getFullYear()}-W${weekNum.toString().padStart(2, "0")}`;
-                  } else if (t.id === "month") {
-                    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                    periodKey = `${lastMonth.getFullYear()}-${(lastMonth.getMonth() + 1).toString().padStart(2, "0")}`;
-                  } else {
-                    periodKey = `${now.getFullYear() - 1}`;
-                  }
-
-                  const alreadyGenerated = summaryHistory.some(s => s.type === t.id && s.periodKey === periodKey);
-                  const enabled = meetsThreshold && !alreadyGenerated;
-
-                  return (
-                    <button key={t.id} onClick={() => { if (enabled) { setSumType(t.id); } }} disabled={!enabled} style={{
-                      padding: "8px 16px", borderRadius: 8, cursor: enabled ? "pointer" : "not-allowed", fontSize: 13, fontFamily: "inherit",
-                      background: sumType === t.id ? "rgba(120,100,255,0.25)" : "rgba(15,18,45,0.6)",
-                      border: `1px solid ${sumType === t.id ? "rgba(140,120,255,0.6)" : "rgba(100,120,200,0.2)"}`,
-                      color: enabled ? (sumType === t.id ? "rgba(210,200,255,0.98)" : "rgba(160,170,220,0.7)") : "rgba(100,110,150,0.35)",
-                      fontWeight: sumType === t.id ? 600 : 400, transition: "all .2s",
-                      opacity: enabled ? 1 : 0.5,
-                    }}>
-                      {t.label} <span style={{ fontSize: 10, opacity: .7 }}>
-                        {alreadyGenerated ? "✓已生成" : `${count}/${t.min}`}
-                      </span>
-                    </button>
-                  );
-                })}
-                <button className="btn-primary" onClick={genSummary} disabled={sumLoading} style={{
-                  padding: "8px 18px", borderRadius: 8, background: "none", border: "1px solid rgba(140,160,255,0.4)",
-                  color: "rgba(160,180,255,0.85)", cursor: "pointer", fontSize: 13, fontFamily: "inherit", opacity: sumLoading ? .5 : 1,
-                }}>{sumLoading ? "生成中…" : "生成复盘"}</button>
-              </div>
-
-              <Glass style={{ padding: "22px", minHeight: 220, fontSize: 15, lineHeight: 1.95, color: sumText ? "rgba(210,215,255,0.88)" : "rgba(100,120,180,0.35)", fontStyle: sumText ? "normal" : "italic" }}>
-                {sumLoading ? (
-                  <span className="generating">正在深入分析你的日记…</span>
-                ) : sumText ? (
-                  <div dangerouslySetInnerHTML={{ __html: parseMarkdown(sumText) }} />
-                ) : (
-                  "选择时间范围，点击「生成复盘」"
-                )}
-              </Glass>
-
-              {/* 14-day heatmap */}
-              {entries.length > 0 && (
-                <div style={{ marginTop: 24 }}>
-                  <div style={{ fontSize: 10, color: "rgba(100,120,180,0.4)", letterSpacing: ".15em", textTransform: "uppercase", marginBottom: 10 }}>过去 14 天记录</div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {Array.from({ length: 14 }).map((_, i) => {
-                      const d = new Date(); d.setDate(d.getDate() - (13 - i));
-                      const wrote = entries.some(e => new Date(e.date).toDateString() === d.toDateString());
-                      return <div key={i} title={d.toLocaleDateString("zh-CN")} style={{
-                        flex: 1, height: 20, borderRadius: 4, transition: "all .2s",
-                        background: wrote ? "linear-gradient(135deg,rgba(120,100,255,0.7),rgba(80,160,255,0.7))" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${wrote ? "rgba(140,120,255,0.4)" : "rgba(100,120,200,0.1)"}`,
-                        boxShadow: wrote ? "0 0 6px rgba(120,100,255,0.3)" : "none",
-                      }} />;
-                    })}
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 10, color: "rgba(100,120,180,0.3)" }}>
-                    <span>14天前</span><span>今天</span>
-                  </div>
+                  {/* 14-day heatmap */}
+                  {entries.length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <div style={{ fontSize: 10, color: "rgba(100,120,180,0.4)", letterSpacing: ".15em", textTransform: "uppercase", marginBottom: 10 }}>过去 14 天记录</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {Array.from({ length: 14 }).map((_, i) => {
+                          const d = new Date(); d.setDate(d.getDate() - (13 - i));
+                          const wrote = entries.some(e => new Date(e.date).toDateString() === d.toDateString());
+                          return <div key={i} title={d.toLocaleDateString("zh-CN")} style={{
+                            flex: 1, height: 20, borderRadius: 4, transition: "all .2s",
+                            background: wrote ? "linear-gradient(135deg,rgba(120,100,255,0.7),rgba(80,160,255,0.7))" : "rgba(255,255,255,0.04)",
+                            border: `1px solid ${wrote ? "rgba(140,120,255,0.4)" : "rgba(100,120,200,0.1)"}`,
+                            boxShadow: wrote ? "0 0 6px rgba(120,100,255,0.3)" : "none",
+                          }} />;
+                        })}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 10, color: "rgba(100,120,180,0.3)" }}>
+                        <span>14天前</span><span>今天</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
 
-          {/* ════════════ SETTINGS ════════════ */}
-          {view === "settings" && (
-            <div className="anim-up">
-              <h2 style={{ fontSize: 18, fontWeight: 400, color: "rgba(210,215,255,0.92)", marginBottom: 6, letterSpacing: ".05em" }}>设置</h2>
-              <p style={{ fontSize: 13, color: "rgba(160,170,220,0.65)", marginBottom: 28 }}>个人档案 · 存储说明 · 使用指南</p>
+              {/* ════════════ SETTINGS ════════════ */}
+              {view === "settings" && (
+                <div className="anim-up">
+                  <h2 style={{ fontSize: 18, fontWeight: 400, color: "rgba(210,215,255,0.92)", marginBottom: 6, letterSpacing: ".05em" }}>设置</h2>
+                  <p style={{ fontSize: 13, color: "rgba(160,170,220,0.65)", marginBottom: 28 }}>个人档案 · 存储说明 · 使用指南</p>
 
-              {/* Profile section */}
-              <Glass style={{ padding: "22px", marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 4 }}>个人性格档案</h3>
-                    <p style={{ fontSize: 11, color: "rgba(155,165,220,0.6)" }}>当前版本 {profileVersion} · AI 复盘后自动更新</p>
-                  </div>
-                  <div style={{ fontSize: 18, opacity: .6 }}>✦</div>
-                </div>
-                <div style={{ background: "rgba(8,12,40,0.55)", border: "1px solid rgba(120,140,220,0.2)", borderRadius: 8, padding: "16px", fontSize: 13.5, lineHeight: 2, color: "rgba(205,210,245,0.85)", whiteSpace: "pre-wrap", maxHeight: 340, overflowY: "auto" }}>
-                  {profile}
-                </div>
-                <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
-                  这是 AI 目前对你的了解。每次生成复盘后，它会根据你最新的日记内容悄悄更新这份档案，记录你真实的成长轨迹。你可以在这里看到它对你的理解在随时间发生怎样的变化。
-                </p>
-              </Glass>
-
-              {/* Storage info */}
-              <Glass style={{ padding: "20px", marginBottom: 16 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>数据存储说明</h3>
-                {[
-                  { icon: "🔒", title: "存储在哪里", desc: "日记存储在 Claude.ai 的持久化存储中，与你的账号绑定。同一账号登录均可访问。" },
-                  { icon: "📱", title: "跨设备访问", desc: "在任何设备上登录 Claude.ai，打开这个 App 即可看到所有日记。" },
-                  { icon: "💻", title: "本地使用说明", desc: "可以将代码下载到本地运行，但需要配置你自己的 Anthropic API Key。AI 功能正常可用，但日记数据不会与 Claude.ai 上的同步。" },
-                  { icon: "🛡", title: "隐私", desc: "日记内容不会被 Anthropic 用于训练，仅在你主动生成问题或复盘时发送给 AI 处理。" },
-                ].map((item, i) => (
-                  <div key={i} style={{ display: "flex", gap: 12, marginBottom: i < 3 ? 14 : 0 }}>
-                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>{item.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(205,212,245,0.85)", marginBottom: 3 }}>{item.title}</div>
-                      <div style={{ fontSize: 13, color: "rgba(165,175,225,0.65)", lineHeight: 1.7 }}>{item.desc}</div>
+                  {/* Profile section */}
+                  <Glass style={{ padding: "22px", marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                      <div>
+                        <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 4 }}>个人性格档案</h3>
+                        <p style={{ fontSize: 11, color: "rgba(155,165,220,0.6)" }}>当前版本 {profileVersion} · AI 复盘后自动更新</p>
+                      </div>
+                      <div style={{ fontSize: 18, opacity: .6 }}>✦</div>
                     </div>
-                  </div>
-                ))}
-              </Glass>
-
-              {/* How to use */}
-              <Glass style={{ padding: "20px" }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>使用指南</h3>
-                {[
-                  ["写今天", "先写日记，保存后 AI 会基于你今天的内容生成一个专属反思问题。回答它，或者跳过。"],
-                  ["补记功能", "页面顶部可以切换到过去3天内还没写的日期，进行补记。每个日期只能补记一次。"],
-                  ["今日一问", "每次保存日记后自动生成，基于你的日记内容和性格档案定制，不会让你焦虑，只是帮你多想一步。"],
-                  ["AI 复盘", "周复盘（≥5天）分析日记。周日可生成「本周」，周一-六可生成「上周」。上月复盘（≥15天）整合周复盘，去年复盘（≥180天）整合月复盘。每周/月/年只能生成一次。档案更新：周+0.1，月+0.3，年+1.0。"],
-                  ["坚持的秘诀", "不用每天写很多。哪怕三行也算。连续天数是给你看的，不是用来让你焦虑的。"],
-                ].map(([title, desc], i) => (
-                  <div key={i} style={{ display: "flex", gap: 10, marginBottom: i < 3 ? 14 : 0 }}>
-                    <div style={{ width: 20, height: 20, borderRadius: "50%", background: "rgba(130,110,255,0.25)", border: "1px solid rgba(150,130,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "rgba(190,175,255,0.9)", flexShrink: 0, marginTop: 2 }}>{i + 1}</div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(205,210,245,0.85)", marginBottom: 3 }}>{title}</div>
-                      <div style={{ fontSize: 13, color: "rgba(165,175,225,0.65)", lineHeight: 1.7 }}>{desc}</div>
+                    <div style={{ background: "rgba(8,12,40,0.55)", border: "1px solid rgba(120,140,220,0.2)", borderRadius: 8, padding: "16px", fontSize: 13.5, lineHeight: 2, color: "rgba(205,210,245,0.85)", whiteSpace: "pre-wrap", maxHeight: 340, overflowY: "auto" }}>
+                      {profile}
                     </div>
-                  </div>
-                ))}
-              </Glass>
-              {/* Settings Action: API Key & Quota */}
-              <Glass style={{ padding: "20px", marginBottom: 16 }}>
-                <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>账户 & API 额度</h3>
-                <div style={{ marginBottom: 16, fontSize: 13, color: "rgba(165,175,225,0.8)", lineHeight: 1.6 }}>
-                  当前免费体验次数: <strong>{usageCount} / 10</strong>
-                  <br />
-                  <span style={{ fontSize: 11, color: "rgba(165,175,225,0.5)" }}>（超出后请配置您自己的 OpenRouter API Key）</span>
-                </div>
+                    <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
+                      这是 AI 目前对你的了解。每次生成复盘后，它会根据你最新的日记内容悄悄更新这份档案，记录你真实的成长轨迹。你可以在这里看到它对你的理解在随时间发生怎样的变化。
+                    </p>
+                  </Glass>
 
-                <div style={{ display: "flex", gap: 10 }}>
-                  <input
-                    type="password"
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder="sk-or-v1-xxxxxxxxxx..."
-                    style={{
-                      flex: 1, padding: "10px 14px", borderRadius: 8,
-                      background: "rgba(10,14,35,0.6)",
-                      border: "1px solid rgba(120,140,255,0.3)",
-                      color: "rgba(230,235,255,0.9)",
-                      fontSize: 13, outline: "none"
-                    }}
-                  />
-                  <button
-                    onClick={async () => {
-                      if (!apiKeyInput.trim()) return;
-                      await authedFetch("/api/me/apikey?api_key=" + encodeURIComponent(apiKeyInput.trim()), { method: "POST" });
-                      alert("API Key 已更新");
-                    }}
-                    style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(100,120,255,0.2)", border: "1px solid rgba(140,160,255,0.4)", color: "rgba(210,215,255,0.9)", cursor: "pointer", fontSize: 13 }}
-                  >
-                    保存 Key
-                  </button>
-                </div>
+                  {/* Storage info */}
+                  <Glass style={{ padding: "20px", marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>数据存储说明</h3>
+                    {[
+                      { icon: "🔒", title: "存储在哪里", desc: "日记存储在 Claude.ai 的持久化存储中，与你的账号绑定。同一账号登录均可访问。" },
+                      { icon: "📱", title: "跨设备访问", desc: "在任何设备上登录 Claude.ai，打开这个 App 即可看到所有日记。" },
+                      { icon: "💻", title: "本地使用说明", desc: "可以将代码下载到本地运行，但需要配置你自己的 Anthropic API Key。AI 功能正常可用，但日记数据不会与 Claude.ai 上的同步。" },
+                      { icon: "🛡", title: "隐私", desc: "日记内容不会被 Anthropic 用于训练，仅在你主动生成问题或复盘时发送给 AI 处理。" },
+                    ].map((item, i) => (
+                      <div key={i} style={{ display: "flex", gap: 12, marginBottom: i < 3 ? 14 : 0 }}>
+                        <span style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>{item.icon}</span>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(205,212,245,0.85)", marginBottom: 3 }}>{item.title}</div>
+                          <div style={{ fontSize: 13, color: "rgba(165,175,225,0.65)", lineHeight: 1.7 }}>{item.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </Glass>
 
-                <div style={{ marginTop: 24, borderTop: "1px solid rgba(120,140,255,0.15)", paddingTop: 16 }}>
-                  <button onClick={handleLogout} style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(220,60,60,0.15)", border: "1px solid rgba(220,80,80,0.3)", color: "rgba(255,140,140,0.9)", cursor: "pointer", fontSize: 13, width: "100%" }}>
-                    退出登录
-                  </button>
-                </div>
-              </Glass>
-            </div>
-          )}
+                  {/* How to use */}
+                  <Glass style={{ padding: "20px" }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>使用指南</h3>
+                    {[
+                      ["写今天", "先写日记，保存后 AI 会基于你今天的内容生成一个专属反思问题。回答它，或者跳过。"],
+                      ["补记功能", "页面顶部可以切换到过去3天内还没写的日期，进行补记。每个日期只能补记一次。"],
+                      ["今日一问", "每次保存日记后自动生成，基于你的日记内容和性格档案定制，不会让你焦虑，只是帮你多想一步。"],
+                      ["AI 复盘", "周复盘（≥5天）分析日记。周日可生成「本周」，周一-六可生成「上周」。上月复盘（≥15天）整合周复盘，去年复盘（≥180天）整合月复盘。每周/月/年只能生成一次。档案更新：周+0.1，月+0.3，年+1.0。"],
+                      ["坚持的秘诀", "不用每天写很多。哪怕三行也算。连续天数是给你看的，不是用来让你焦虑的。"],
+                    ].map(([title, desc], i) => (
+                      <div key={i} style={{ display: "flex", gap: 10, marginBottom: i < 3 ? 14 : 0 }}>
+                        <div style={{ width: 20, height: 20, borderRadius: "50%", background: "rgba(130,110,255,0.25)", border: "1px solid rgba(150,130,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "rgba(190,175,255,0.9)", flexShrink: 0, marginTop: 2 }}>{i + 1}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(205,210,245,0.85)", marginBottom: 3 }}>{title}</div>
+                          <div style={{ fontSize: 13, color: "rgba(165,175,225,0.65)", lineHeight: 1.7 }}>{desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </Glass>
+                  {/* Settings Action: API Key & Quota */}
+                  <Glass style={{ padding: "20px", marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>账户 & API 额度</h3>
+                    <div style={{ marginBottom: 16, fontSize: 13, color: "rgba(165,175,225,0.8)", lineHeight: 1.6 }}>
+                      当前免费体验次数: <strong>{usageCount} / 10</strong>
+                      <br />
+                      <span style={{ fontSize: 11, color: "rgba(165,175,225,0.5)" }}>（超出后请配置您自己的 OpenRouter API Key）</span>
+                    </div>
 
-        </main>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <input
+                        type="password"
+                        value={apiKeyInput}
+                        onChange={(e) => setApiKeyInput(e.target.value)}
+                        placeholder="sk-or-v1-xxxxxxxxxx..."
+                        style={{
+                          flex: 1, padding: "10px 14px", borderRadius: 8,
+                          background: "rgba(10,14,35,0.6)",
+                          border: "1px solid rgba(120,140,255,0.3)",
+                          color: "rgba(230,235,255,0.9)",
+                          fontSize: 13, outline: "none"
+                        }}
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!apiKeyInput.trim()) return;
+                          await authedFetch("/api/me/apikey?api_key=" + encodeURIComponent(apiKeyInput.trim()), { method: "POST" });
+                          alert("API Key 已更新");
+                        }}
+                        style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(100,120,255,0.2)", border: "1px solid rgba(140,160,255,0.4)", color: "rgba(210,215,255,0.9)", cursor: "pointer", fontSize: 13 }}
+                      >
+                        保存 Key
+                      </button>
+                    </div>
+
+                    <div style={{ marginTop: 24, borderTop: "1px solid rgba(120,140,255,0.15)", paddingTop: 16 }}>
+                      <button onClick={handleLogout} style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(220,60,60,0.15)", border: "1px solid rgba(220,80,80,0.3)", color: "rgba(255,140,140,0.9)", cursor: "pointer", fontSize: 13, width: "100%" }}>
+                        退出登录
+                      </button>
+                    </div>
+                  </Glass>
+                </div>
+              )}
+
+            </main>
+          </div>
+        )}
       </div>
 
       {/* ════════════ AUTHENTICATION MODAL ════════════ */}
