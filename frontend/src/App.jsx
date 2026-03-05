@@ -1650,10 +1650,10 @@ ${profile}
                   <Glass style={{ padding: "20px", marginBottom: 16 }}>
                     <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>数据存储说明</h3>
                     {[
-                      { icon: "🔒", title: "存储在哪里", desc: "日记存储在 Claude.ai 的持久化存储中，与你的账号绑定。同一账号登录均可访问。" },
-                      { icon: "📱", title: "跨设备访问", desc: "在任何设备上登录 Claude.ai，打开这个 App 即可看到所有日记。" },
-                      { icon: "💻", title: "本地使用说明", desc: "可以将代码下载到本地运行，但需要配置你自己的 Anthropic API Key。AI 功能正常可用，但日记数据不会与 Claude.ai 上的同步。" },
-                      { icon: "🛡", title: "隐私", desc: "日记内容不会被 Anthropic 用于训练，仅在你主动生成问题或复盘时发送给 AI 处理。" },
+                      { icon: "🔒", title: "存储在哪里", desc: "日记和性格档案存储在云端数据库（Supabase PostgreSQL），与你的账号绑定，注册即永久保存。" },
+                      { icon: "📱", title: "跨设备访问", desc: "在任何设备上用相同账号登录即可看到所有日记，数据实时同步。" },
+                      { icon: "🤖", title: "AI 服务", desc: "AI 功能通过 OpenRouter 调用，支持自定义 API Key。免费额度用完后，在设置中填入你自己的 OpenRouter Key 即可继续使用。" },
+                      { icon: "🛡", title: "隐私", desc: "日记内容仅在你主动生成反思问题或复盘时发送给 AI 处理，不会被用于训练模型。" },
                     ].map((item, i) => (
                       <div key={i} style={{ display: "flex", gap: 12, marginBottom: i < 3 ? 14 : 0 }}>
                         <span style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>{item.icon}</span>
