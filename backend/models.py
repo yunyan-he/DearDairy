@@ -28,6 +28,7 @@ class User(Base):
     # Custom API settings
     api_key = Column(String, nullable=True) # User's own OpenRouter API key
     usage_count = Column(Integer, default=0) # Tracks free usages (up to 10)
+    is_unlimited = Column(Boolean, default=False) # Skip quota if True
     
     # Relationships
     entries = relationship("Entry", back_populates="owner")

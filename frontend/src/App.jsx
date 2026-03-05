@@ -319,6 +319,7 @@ export default function App() {
   // User Settings state
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [usageCount, setUsageCount] = useState(0);
+  const [isUnlimited, setIsUnlimited] = useState(false);
 
   const [view, setView] = useState("write"); // write | history | summary | settings
   const [entries, setEntries] = useState([]);
@@ -464,6 +465,7 @@ export default function App() {
       if (me) {
         setApiKeyInput(me.api_key || "");
         setUsageCount(me.usage_count || 0);
+        setIsUnlimited(me.is_unlimited || false);
       }
       if (obs) setObservations(obs);
       setLoading(false);
@@ -1760,11 +1762,15 @@ ${profile}
                   </Glass>
                   {/* Settings Action: API Key & Quota */}
                   <Glass style={{ padding: "20px", marginBottom: 16 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>账户 & API 额度</h3>
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>{t.settings.apiTitle}</h3>
                     <div style={{ marginBottom: 16, fontSize: 13, color: "rgba(165,175,225,0.8)", lineHeight: 1.6 }}>
-                      当前免费体验次数: <strong>{usageCount} / 10</strong>
+                      {isUnlimited ? (
+                        <span style={{ color: "rgba(180,165,255,0.95)", fontWeight: 600 }}>{t.settings.unlimitedUsage}</span>
+                      ) : (
+                        t.settings.freeUsage(usageCount)
+                      )}
                       <br />
-                      <span style={{ fontSize: 11, color: "rgba(165,175,225,0.5)" }}>（超出后请配置您自己的 OpenRouter API Key）</span>
+                      <span style={{ fontSize: 11, color: "rgba(165,175,225,0.5)" }}>{t.settings.apiSub}</span>
                     </div>
 
                     <div style={{ display: "flex", gap: 10 }}>

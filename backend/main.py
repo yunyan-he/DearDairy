@@ -169,7 +169,8 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     return {
         "username": current_user.username,
         "api_key": current_user.api_key,
-        "usage_count": current_user.usage_count
+        "usage_count": current_user.usage_count,
+        "is_unlimited": current_user.is_unlimited
     }
 
 @app.post("/api/me/apikey")
@@ -311,7 +312,7 @@ async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_
     # Check whose API key to use
     api_key_to_use = current_user.api_key
     
-    if not api_key_to_use:
+    if not api_key_to_use and not current_user.is_unlimited:
         # Check quota
         if current_user.usage_count >= 10:
             raise HTTPException(status_code=403, detail="Free usage limit exceeded. Please add your own OpenRouter API key in Settings.")
@@ -363,4 +364,26 @@ async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_
         content = result["choices"][0]["message"]["content"]
         return {"content": [{"text": content}]}
     except (KeyError, IndexError) as e:
-        raise HTTPException(status_code=500, detail="Unexpected response format from OpenRouter.")
+        raise HTTPException(status_code=500, detail="Invalid response format from AI provider.")
+
+# ── ADMIN ──
+class PromoteRequest(BaseModel):
+    username: str
+    is_unlimited: bool
+    admin_key: str
+
+@app.post("/api/admin/unlimited")
+async def toggle_unlimited(req: PromoteRequest, db: Session = Depends(get_db)):
+    # Simple check against .env
+    expected_key = os.environ.get("ADMIN_SECRET", "change-me-locally")
+    if req.admin_key != expected_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key.")
+    
+    target_user = db.query(User).filter(User.username == req.username).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    
+    target_user.is_unlimited = req.is_unlimited
+    db.commit()
+    return {"message": f"User {req.username} is_unlimited set to {req.is_unlimited}"}
+

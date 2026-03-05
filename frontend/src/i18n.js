@@ -139,7 +139,10 @@ export const translations = {
             apiKeySaving: "保存中…",
             apiKeySave: "保存",
             apiKeySaved: "已保存 ✓",
+            apiTitle: "账户 & API 额度",
+            apiSub: "（超出后请配置您自己的 OpenRouter API Key）",
             freeUsage: (n) => `免费额度已使用 ${n}/10 次`,
+            unlimitedUsage: "测试账号：无限 AI 次数 ✦",
             logout: "退出登录",
         },
 
@@ -320,7 +323,10 @@ export const translations = {
             apiKeySaving: "Saving…",
             apiKeySave: "Save",
             apiKeySaved: "Saved ✓",
+            apiTitle: "Account & Quota",
+            apiSub: "(Add your own OpenRouter API Key for unlimited usage)",
             freeUsage: (n) => `Free usage: ${n}/10`,
+            unlimitedUsage: "Test Account: Unlimited AI ✦",
             logout: "Log Out",
         },
 
