@@ -330,8 +330,18 @@ async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_
     messages = []
     if req.system:
         messages.append({"role": "system", "content": req.system})
-    
-    messages.extend([{"role": m.role, "content": m.content} for m in req.messages])
+
+    for m in req.messages:
+        # Basic validation: only allow 'user' and 'assistant' in message history
+        if m.role not in ["user", "assistant"]:
+            continue
+            
+        content = m.content
+        if m.role == "user":
+            # Demarcate user content to prevent prompt injection
+            content = f"[USER CONTENT START]\n{content}\n[USER CONTENT END]"
+            
+        messages.append({"role": m.role, "content": content})
 
     openrouter_req = {
         "model": model,
@@ -354,10 +364,6 @@ async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_
             result = response.json()
     except Exception as e:
         print(f"Error calling OpenRouter: {e}")
-        # rollback increment if the call failed
-        if api_key_to_use == os.environ.get('OPENROUTER_API_KEY'):
-             current_user.usage_count -= 1
-             db.commit()
         raise HTTPException(status_code=500, detail="Failed to fetch response from AI provider.")
 
     try:
