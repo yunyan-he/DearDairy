@@ -58,13 +58,16 @@ const DEFAULT_PROFILE = `【用户性格档案 v1.0】
 // ══════════════════════════════════════════════════════
 // AUTHENTICATED FETCH WRAPPER
 // ══════════════════════════════════════════════════════
-async function authedFetch(url, options = {}) {
+const API_BASE = import.meta.env.PROD ? "https://diary-backend-api.onrender.com" : "";
+
+async function authedFetch(endpoint, options = {}) {
   const token = localStorage.getItem("diary_token");
   const headers = { ...options.headers };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE}${endpoint}`;
   const response = await fetch(url, { ...options, headers });
   if (response.status === 401) {
     // Token expired or invalid
@@ -333,7 +336,8 @@ export default function App() {
         headers = { "Content-Type": "application/json" };
       }
 
-      const r = await fetch(url, { method: "POST", headers, body });
+      const fullUrl = url.startsWith("http") ? url : `${API_BASE}${url}`;
+      const r = await fetch(fullUrl, { method: "POST", headers, body });
 
       let data;
       try {
