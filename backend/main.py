@@ -312,17 +312,17 @@ async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_
     # Check whose API key to use
     api_key_to_use = current_user.api_key
     
-    if not api_key_to_use and not current_user.is_unlimited:
-        # Check quota
-        if current_user.usage_count >= 10:
-            raise HTTPException(status_code=403, detail="Free usage limit exceeded. Please add your own OpenRouter API key in Settings.")
-        
+    if not api_key_to_use:
         # Use server key
         api_key_to_use = os.environ.get('OPENROUTER_API_KEY')
         if not api_key_to_use:
             raise HTTPException(status_code=500, detail="Server OpenRouter key is missing.")
             
-        # Increment quota only if no exception
+        # Quota check: only block if NOT unlimited AND over limit
+        if not current_user.is_unlimited and current_user.usage_count >= 10:
+            raise HTTPException(status_code=403, detail="Free usage limit exceeded. Please add your own OpenRouter API key in Settings.")
+        
+        # Increment usage for everyone (tracking purpose, even for unlimited)
         current_user.usage_count += 1
         db.commit()
     

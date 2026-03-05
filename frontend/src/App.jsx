@@ -566,8 +566,18 @@ export default function App() {
     try {
       const moodLabel = MOODS.find(m => m.v === mood)?.label || t.write.moods[2];
       const system = (lang === "en"
-        ? `You are the user's personal growth companion who knows them deeply. Here is their personality profile:\n\n${profile}\n\nYour task: based on today's journal entry and mood, generate ONE personalized reflection question.\n\nRules:\n1. The question must be based on specific content from the entry, not generic\n2. Warm and conversational — like a friend who truly knows them, not an interrogator\n3. If mood is good, help deepen thinking; if mood is bad, start with a brief empathetic acknowledgment\n4. Never create anxiety, guilt, or self-blame\n5. The question should spark reflection without feeling heavy\n6. If they describe failure or laziness, help extract a lesson — don't punish\n7. Output only the question itself (with optional brief empathetic opener), max 60 words`
-        : `你是用户的私人成长伙伴，了解她的一切。以下是她的性格档案：\n\n${profile}\n\n你的任务：根据用户今天写的日记内容和心情，生成一个专属反思问题。\n\n严格规则：\n1. 问题必须基于日记的具体内容，不能是泛泛而谈的通用问题\n2. 语气要有温度，就像一个懂你的朋友在问你\n3. 情绪好时引导她思考和深化；情绪糟糕时，先给一句温暖的感受确认，再提问\n4. 绝对不能制造焦虑、自责或内畦感\n5. 问题要能让她反思，但不能让她带着沉重感入睡\n6. 如果她描述了某个失败或不自律的行为，问题要帮她提炼教训\n7. 只输出问题本身，不超过60字`
+        ? `You are the user's personal growth companion. Here is their profile:\n\n${profile}\n\nTask: Based on TODAY'S specific entry below, ask ONE deeply personalized reflection question.
+Rules:
+1. MUST refer to a specific event, person, or feeling mentioned in today's entry.
+2. No generic advice. No "How was your day" type questions.
+3. Be a "sparring partner" - challenge their patterns based on their profile.
+4. Warm but insightful. Max 50 words.`
+        : `你是用户的私人成长伙伴。这是她的性格档案：\n\n${profile}\n\n任务：根据下面她【今天】写的具体内容，提一个深度私有化的反思问题。
+规则：
+1. 【必须】提到她今天日记里具体的某件事、某个人或某种特定情绪。
+2. 拒绝空话。禁止问“今天过得怎么样”或“明天想做什么”这种通用问题。
+3. 作为一个“思维导引者”，根据她的性格弱点（如拖延、内耗）进行针对性启发。
+4. 语气温暖但有穿透力。不超过50字。`
       );
       const q = await callAI(system, lang === "en"
         ? `Today's mood: ${moodLabel}\n\nToday's journal:\n${entry.content}`
@@ -580,8 +590,8 @@ export default function App() {
       setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, question: q } : e));
     } catch (err) {
       setAiQuestion(lang === "en"
-        ? "Looking back at what you wrote today — what's one small thing you could do differently tomorrow?"
-        : "今天写下来的这些，有什么是你觉得明天可以不一样的？"
+        ? "(Default) Looking back at today — what's one small thing you want to remember tomorrow?"
+        : "（由于网络或额度原因，AI 暂时无法回答）回望今天，有什么是你最想记下的瞬间？"
       );
     }
     setGeneratingQ(false);
