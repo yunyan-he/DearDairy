@@ -90,3 +90,7 @@ frontend/dist-ssr/
 # Vite specifics
 npm-debug.log*
 yarn-error.log*
+
+# User custom ignored files
+DEPLOYMENT.md
+backend/test_auth.py

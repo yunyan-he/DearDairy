@@ -56,25 +56,44 @@ const DEFAULT_PROFILE = `【用户性格档案 v1.0】
 注：此档案会随着AI复盘后自动更新，记录用户真实的成长轨迹。`;
 
 // ══════════════════════════════════════════════════════
+// AUTHENTICATED FETCH WRAPPER
+// ══════════════════════════════════════════════════════
+async function authedFetch(url, options = {}) {
+  const token = localStorage.getItem("diary_token");
+  const headers = { ...options.headers };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) {
+    // Token expired or invalid
+    localStorage.removeItem("diary_token");
+    window.location.reload();
+  }
+  return response;
+}
+
+// ══════════════════════════════════════════════════════
 // STORAGE
 // ══════════════════════════════════════════════════════
 
 async function saveEntry(entry) {
-  await fetch("/api/entries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry) });
+  await authedFetch("/api/entries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry) });
 }
 async function loadEntries() {
-  try { const r = await fetch("/api/entries"); if (r.ok) return r.json(); } catch { }
+  try { const r = await authedFetch("/api/entries"); if (r.ok) return r.json(); } catch { }
   return [];
 }
 async function delEntry(id) {
-  await fetch(`/api/entries/${id}`, { method: "DELETE" });
+  await authedFetch(`/api/entries/${id}`, { method: "DELETE" });
 }
 
 // ══════════════════════════════════════════════════════
 // AI
 // ══════════════════════════════════════════════════════
 async function callAI(system, user, maxTokens = 800) {
-  const r = await fetch("/api/chat", {
+  const r = await authedFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -242,6 +261,18 @@ const Glass = ({ children, style = {}, onClick }) => (
 // MAIN APP
 // ══════════════════════════════════════════════════════
 export default function App() {
+  const [authToken, setAuthToken] = useState(localStorage.getItem("diary_token") || null);
+  const [showAuthModal, setShowAuthModal] = useState(!authToken);
+  const [authMode, setAuthMode] = useState("login"); // login | register
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // User Settings state
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [usageCount, setUsageCount] = useState(0);
+
   const [view, setView] = useState("write"); // write | history | summary | settings
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -285,6 +316,47 @@ export default function App() {
   const [sumText, setSumText] = useState("");
   const [sumLoading, setSumLoading] = useState(false);
 
+  // ── Auth Handling ──
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    setAuthLoading(true); setAuthError("");
+    const url = authMode === "login" ? "/api/login" : "/api/register";
+    try {
+      let body, headers;
+      if (authMode === "login") {
+        body = new URLSearchParams();
+        body.append("username", authUsername);
+        body.append("password", authPassword);
+        headers = { "Content-Type": "application/x-www-form-urlencoded" };
+      } else {
+        body = JSON.stringify({ username: authUsername, password: authPassword });
+        headers = { "Content-Type": "application/json" };
+      }
+
+      const r = await fetch(url, { method: "POST", headers, body });
+      const data = await r.json();
+
+      if (!r.ok) throw new Error(data.detail || "Authentication failed");
+
+      localStorage.setItem("diary_token", data.access_token);
+      setAuthToken(data.access_token);
+      setShowAuthModal(false);
+      setAuthPassword(""); // clear password from state
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("diary_token");
+    setAuthToken(null);
+    setShowAuthModal(true);
+    setEntries([]);
+    setSummaryHistory([]);
+  };
+
   // Load existing summary when switching to summary view or changing sumType
   useEffect(() => {
     if (view !== "summary" || !summaryHistory.length) return;
@@ -302,20 +374,28 @@ export default function App() {
   }, [view, sumType, summaryHistory]);
 
   useEffect(() => {
-    const fetchProfileState = async () => { try { const r = await fetch("/api/profile"); if (r.ok) return r.json(); } catch { } return null; };
-    const loadSummaries = async () => { try { const r = await fetch("/api/summaries"); if (r.ok) return r.json(); } catch { } return []; };
+    if (!authToken) return;
+
+    const fetchProfileState = async () => { try { const r = await authedFetch("/api/profile"); if (r.ok) return r.json(); } catch { } return null; };
+    const loadSummaries = async () => { try { const r = await authedFetch("/api/summaries"); if (r.ok) return r.json(); } catch { } return []; };
+    const loadMe = async () => { try { const r = await authedFetch("/api/me"); if (r.ok) return r.json(); } catch { } return null; };
 
     Promise.all([
       loadEntries(),
       fetchProfileState(),
       Promise.resolve(localStorage.getItem("last-reminder-dismissed")),
       loadSummaries(),
-    ]).then(([e, profileState, lastDismissed, summaries]) => {
+      loadMe(),
+    ]).then(([e, profileState, lastDismissed, summaries, me]) => {
       setEntries(e);
       setStreak(calcStreak(e));
       if (profileState?.content) setProfile(profileState.content);
       if (profileState?.version) setProfileVersion(profileState.version);
       if (summaries) setSummaryHistory(summaries);
+      if (me) {
+        setApiKeyInput(me.api_key || "");
+        setUsageCount(me.usage_count || 0);
+      }
       setLoading(false);
 
       // Determine if a reminder bubble should show
@@ -340,7 +420,7 @@ export default function App() {
       const wroteToday = e.some(en => new Date(en.date).toDateString() === now.toDateString());
       if (hour >= 22 && !wroteToday) setLateNightNudge(true);
     });
-  }, []);
+  }, [authToken]);
 
   const dismissReminder = async () => {
     setReminderDismissed(true);
@@ -1237,11 +1317,111 @@ ${profile}
                   </div>
                 ))}
               </Glass>
+              {/* Settings Action: API Key & Quota */}
+              <Glass style={{ padding: "20px", marginBottom: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>账户 & API 额度</h3>
+                <div style={{ marginBottom: 16, fontSize: 13, color: "rgba(165,175,225,0.8)", lineHeight: 1.6 }}>
+                  当前免费体验次数: <strong>{usageCount} / 10</strong>
+                  <br />
+                  <span style={{ fontSize: 11, color: "rgba(165,175,225,0.5)" }}>（超出后请配置您自己的 OpenRouter API Key）</span>
+                </div>
+
+                <div style={{ display: "flex", gap: 10 }}>
+                  <input
+                    type="password"
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="sk-or-v1-xxxxxxxxxx..."
+                    style={{
+                      flex: 1, padding: "10px 14px", borderRadius: 8,
+                      background: "rgba(10,14,35,0.6)",
+                      border: "1px solid rgba(120,140,255,0.3)",
+                      color: "rgba(230,235,255,0.9)",
+                      fontSize: 13, outline: "none"
+                    }}
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!apiKeyInput.trim()) return;
+                      await authedFetch("/api/me/apikey?api_key=" + encodeURIComponent(apiKeyInput.trim()), { method: "POST" });
+                      alert("API Key 已更新");
+                    }}
+                    style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(100,120,255,0.2)", border: "1px solid rgba(140,160,255,0.4)", color: "rgba(210,215,255,0.9)", cursor: "pointer", fontSize: 13 }}
+                  >
+                    保存 Key
+                  </button>
+                </div>
+
+                <div style={{ marginTop: 24, borderTop: "1px solid rgba(120,140,255,0.15)", paddingTop: 16 }}>
+                  <button onClick={handleLogout} style={{ padding: "10px 16px", borderRadius: 8, background: "rgba(220,60,60,0.15)", border: "1px solid rgba(220,80,80,0.3)", color: "rgba(255,140,140,0.9)", cursor: "pointer", fontSize: 13, width: "100%" }}>
+                    退出登录
+                  </button>
+                </div>
+              </Glass>
             </div>
           )}
 
         </main>
       </div>
+
+      {/* ════════════ AUTHENTICATION MODAL ════════════ */}
+      {showAuthModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+          background: "rgba(10,12,30,0.85)", backdropFilter: "blur(20px)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <Glass style={{ width: 340, padding: "30px", display: "flex", flexDirection: "column", gap: 16 }}>
+            <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)", textAlign: "center", marginBottom: 8 }}>
+              {authMode === "login" ? "登录 日记" : "注册 新账号"}
+            </h2>
+
+            <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <input
+                type="text" required placeholder="用户名 (Username)"
+                value={authUsername} onChange={e => setAuthUsername(e.target.value)}
+                style={{
+                  padding: "12px 14px", borderRadius: 8,
+                  background: "rgba(10,14,35,0.6)",
+                  border: "1px solid rgba(120,140,255,0.3)",
+                  color: "rgba(230,235,255,0.9)",
+                  fontSize: 14, outline: "none"
+                }}
+              />
+              <input
+                type="password" required placeholder="密码 (Password)"
+                value={authPassword} onChange={e => setAuthPassword(e.target.value)}
+                style={{
+                  padding: "12px 14px", borderRadius: 8,
+                  background: "rgba(10,14,35,0.6)",
+                  border: "1px solid rgba(120,140,255,0.3)",
+                  color: "rgba(230,235,255,0.9)",
+                  fontSize: 14, outline: "none"
+                }}
+              />
+              {authError && <div style={{ color: "rgba(255,100,100,0.8)", fontSize: 12, textAlign: "center" }}>{authError}</div>}
+
+              <button disabled={authLoading} type="submit" style={{
+                marginTop: 8, padding: "12px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
+                color: "rgba(255,255,255,0.95)", fontWeight: 600, fontSize: 15, opacity: authLoading ? .6 : 1
+              }}>
+                {authLoading ? "请稍候..." : (authMode === "login" ? "登 录" : "注 册")}
+              </button>
+            </form>
+
+            <div style={{ textAlign: "center", marginTop: 8 }}>
+              <button
+                type="button"
+                onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}
+                style={{ background: "none", border: "none", color: "rgba(160,180,255,0.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}
+              >
+                {authMode === "login" ? "没有账号？点击注册" : "已有账号？点击登录"}
+              </button>
+            </div>
+          </Glass>
+        </div>
+      )}
     </>
   );
 }
