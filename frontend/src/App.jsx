@@ -405,6 +405,7 @@ export default function App() {
       localStorage.setItem("diary_token", data.access_token);
       setAuthToken(data.access_token);
       setShowAuthModal(false);
+      setView("write");
       setAuthPassword(""); // clear password from state
     } catch (err) {
       setAuthError(err.message);
@@ -1114,6 +1115,7 @@ ${profile}
       setProfileVersion("v1.0");
       await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: generatedProfile }) });
       setNeedsOnboarding(false);
+      setView("write");
       setShowProfileNudge(true);
     } catch {
       const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案生成失败，AI将通过后续日记输入逐渐了解\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 初始档案（问卷生成失败）`;
@@ -1121,6 +1123,7 @@ ${profile}
       setProfileVersion("v1.0");
       await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
       setNeedsOnboarding(false);
+      setView("write");
       setShowProfileNudge(true);
     }
   };
@@ -1131,6 +1134,7 @@ ${profile}
     setProfileVersion("v1.0");
     await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
     setNeedsOnboarding(false);
+    setView("write");
   };
 
   // Helper: render a single MCQ + freeform question step
@@ -1293,7 +1297,7 @@ ${profile}
             {/* ── PROFILE NUDGE BUBBLE (post-onboarding) ── */}
             {showProfileNudge && (
               <div className="bubble-in" style={{
-                position: "fixed", bottom: 28, left: 24, zIndex: 100, maxWidth: 260,
+                position: "fixed", bottom: reminder ? 180 : 28, right: 24, zIndex: 100, maxWidth: 260,
                 background: "linear-gradient(135deg,rgba(25,20,70,0.96),rgba(15,25,65,0.96))",
                 border: "1px solid rgba(180,160,255,0.55)", borderRadius: 16, padding: "16px 18px",
                 backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
