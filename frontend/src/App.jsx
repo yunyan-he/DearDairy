@@ -334,7 +334,13 @@ export default function App() {
       }
 
       const r = await fetch(url, { method: "POST", headers, body });
-      const data = await r.json();
+
+      let data;
+      try {
+        data = await r.json();
+      } catch (err) {
+        throw new Error(`服务器错误 (${r.status}): 请稍后重试或检查后端日志`);
+      }
 
       if (!r.ok) throw new Error(data.detail || "Authentication failed");
 
