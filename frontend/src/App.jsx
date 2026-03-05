@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { translations, getLang, setLang } from "./i18n";
 
 // ══════════════════════════════════════════════════════
 // SIMPLE MARKDOWN PARSER
@@ -29,7 +30,7 @@ function parseMarkdown(text) {
 // ══════════════════════════════════════════════════════
 // DEFAULT PERSONA PROMPT — will evolve over time via AI
 // ══════════════════════════════════════════════════════
-const DEFAULT_PROFILE = `【用户性格档案 v1.0】
+const DEFAULT_PROFILE_ZH = `【用户性格档案 v1.0】
 
 核心特征：
 - 内向，喜欢独处，思维深度好但容易overthinking
@@ -54,6 +55,36 @@ const DEFAULT_PROFILE = `【用户性格档案 v1.0】
 - 绝不让用户带着焦虑和自责入睡
 
 注：此档案会随着AI复盘后自动更新，记录用户真实的成长轨迹。`;
+
+const DEFAULT_PROFILE_EN = `[User Personality Profile v1.0]
+
+Core Traits:
+- Introverted, prefers solitude, deep thinker but prone to overthinking
+- Perfectionist in planning, avoidant in execution — a strong contrast
+- Inconsistent follow-through; consistency is the biggest challenge
+
+Main Struggles:
+- Procrastination: knows what to do but delays, often hiding behind "not ready yet"
+- Easily affected by peer comparisons; jealousy disrupts personal rhythm
+- Unclear on main priorities; drains energy in confusion
+- First reaction to challenges is escape or distraction
+
+Growth & Obstacles:
+- Deeply wants to change and grow, but fears failure
+- Uses perfectionism to avoid starting
+- Core goal: overcome procrastination, build real momentum
+
+Interaction Principles:
+- Reflection style: direct but warm, points out blind spots without creating anxiety
+- Genuine encouragement when doing well; comfort before guidance when struggling
+- No coddling: failure has lessons, but don't let her drown in self-blame
+- Never let her go to sleep with unresolved anxiety or self-criticism
+
+Note: This profile auto-updates after each AI review, tracking real growth over time.`;
+
+function getDefaultProfile(lang) {
+  return lang === "en" ? DEFAULT_PROFILE_EN : DEFAULT_PROFILE_ZH;
+}
 
 // ══════════════════════════════════════════════════════
 // AUTHENTICATED FETCH WRAPPER
@@ -131,13 +162,17 @@ function calcStreak(entries) {
 // ══════════════════════════════════════════════════════
 // MOODS
 // ══════════════════════════════════════════════════════
-const MOODS = [
-  { v: 1, emoji: "🌧", label: "很糟" },
-  { v: 2, emoji: "🌫", label: "不好" },
-  { v: 3, emoji: "🌤", label: "普通" },
-  { v: 4, emoji: "🌟", label: "还行" },
-  { v: 5, emoji: "✨", label: "很好" },
-];
+// MOODS are lang-dependent — built dynamically
+function getMoods(t) {
+  const labels = t.write.moods;
+  return [
+    { v: 1, emoji: "🌧", label: labels[0] },
+    { v: 2, emoji: "🌫", label: labels[1] },
+    { v: 3, emoji: "🌤", label: labels[2] },
+    { v: 4, emoji: "🌟", label: labels[3] },
+    { v: 5, emoji: "✨", label: labels[4] },
+  ];
+}
 
 // ══════════════════════════════════════════════════════
 // AURORA CANVAS BACKGROUND
@@ -264,6 +299,15 @@ const Glass = ({ children, style = {}, onClick }) => (
 // MAIN APP
 // ══════════════════════════════════════════════════════
 export default function App() {
+  // ── Language ──
+  const [lang, setLangState] = useState(getLang); // null = not chosen yet
+  const t = lang ? translations[lang] : translations["zh"]; // fallback while choosing
+  const MOODS = getMoods(t);
+
+  const switchLang = (newLang) => {
+    setLang(newLang);
+    setLangState(newLang);
+  };
   const [authToken, setAuthToken] = useState(localStorage.getItem("diary_token") || null);
   const [showAuthModal, setShowAuthModal] = useState(!authToken);
   const [authMode, setAuthMode] = useState("login"); // login | register
@@ -280,7 +324,7 @@ export default function App() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [streak, setStreak] = useState(0);
-  const [profile, setProfile] = useState(DEFAULT_PROFILE);
+  const [profile, setProfile] = useState(() => getDefaultProfile(getLang() || "zh"));
   const [profileVersion, setProfileVersion] = useState("v1.0");
   const [summaryHistory, setSummaryHistory] = useState([]); // { type, date, content, coveredDates }
 
@@ -463,9 +507,9 @@ export default function App() {
   const startRec = useCallback((target) => {
     setVoiceErr("");
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { setVoiceErr("浏览器不支持语音识别，请使用 Chrome"); return; }
+    if (!SR) { setVoiceErr(t.write.voiceError); return; }
     const rec = new SR();
-    rec.continuous = true; rec.interimResults = true; rec.lang = "zh-CN";
+    rec.continuous = true; rec.interimResults = true; rec.lang = t.voiceLang;
     recRef.current = rec;
     setRecTarget(target); setRecording(true);
     let base = target === "content" ? content : aiAnswer;
@@ -516,29 +560,25 @@ export default function App() {
     setAiQuestion(null);
     setAiAnswer("");
     try {
-      const moodLabel = MOODS.find(m => m.v === mood)?.label || "普通";
-      const system = `你是用户的私人成长伙伴，了解她的一切。以下是她的性格档案：
-
-${profile}
-
-你的任务：根据用户今天写的日记内容和心情，生成一个专属反思问题。
-
-严格规则：
-1. 问题必须基于日记的具体内容，不能是泛泛而谈的通用问题
-2. 语气要有温度，就像一个懂你的朋友在问你，不是审讯
-3. 情绪好时，引导她思考和深化；情绪糟糕时，先给一句温暖的感受确认，再提问
-4. 绝对不能制造焦虑、自责或内疚感
-5. 问题要能让她反思，但不能让她带着沉重感入睡
-6. 如果她描述了某个失败或不自律的行为，问题要帮她提炼教训，但不是惩罚她
-7. 只输出问题本身（可以加一句简短的前置感受确认），不超过60字`;
-      const q = await callAI(system, `今天的心情：${moodLabel}\n\n今天的日记：${entry.content}`);
+      const moodLabel = MOODS.find(m => m.v === mood)?.label || t.write.moods[2];
+      const system = (lang === "en"
+        ? `You are the user's personal growth companion who knows them deeply. Here is their personality profile:\n\n${profile}\n\nYour task: based on today's journal entry and mood, generate ONE personalized reflection question.\n\nRules:\n1. The question must be based on specific content from the entry, not generic\n2. Warm and conversational — like a friend who truly knows them, not an interrogator\n3. If mood is good, help deepen thinking; if mood is bad, start with a brief empathetic acknowledgment\n4. Never create anxiety, guilt, or self-blame\n5. The question should spark reflection without feeling heavy\n6. If they describe failure or laziness, help extract a lesson — don't punish\n7. Output only the question itself (with optional brief empathetic opener), max 60 words`
+        : `你是用户的私人成长伙伴，了解她的一切。以下是她的性格档案：\n\n${profile}\n\n你的任务：根据用户今天写的日记内容和心情，生成一个专属反思问题。\n\n严格规则：\n1. 问题必须基于日记的具体内容，不能是泛泛而谈的通用问题\n2. 语气要有温度，就像一个懂你的朋友在问你\n3. 情绪好时引导她思考和深化；情绪糟糕时，先给一句温暖的感受确认，再提问\n4. 绝对不能制造焦虑、自责或内畦感\n5. 问题要能让她反思，但不能让她带着沉重感入睡\n6. 如果她描述了某个失败或不自律的行为，问题要帮她提炼教训\n7. 只输出问题本身，不超过60字`
+      );
+      const q = await callAI(system, lang === "en"
+        ? `Today's mood: ${moodLabel}\n\nToday's journal:\n${entry.content}`
+        : `今天的心情：${moodLabel}\n\n今天的日记：${entry.content}`
+      );
       setAiQuestion(q);
       // Update entry with question
       entry.question = q;
       await saveEntry(entry);
       setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, question: q } : e));
     } catch (err) {
-      setAiQuestion("今天写下来的这些，有什么是你觉得明天可以不一样的？");
+      setAiQuestion(lang === "en"
+        ? "Looking back at what you wrote today — what's one small thing you could do differently tomorrow?"
+        : "今天写下来的这些，有什么是你觉得明天可以不一样的？"
+      );
     }
     setGeneratingQ(false);
   };
@@ -1267,17 +1307,17 @@ ${profile}
             <nav style={{ padding: "0 24px", borderBottom: "1px solid rgba(100,120,200,0.12)" }}>
               <div style={{ maxWidth: 700, margin: "0 auto", display: "flex" }}>
                 {[
-                  { id: "write", label: "写今天" },
-                  { id: "history", label: `过往${entries.length > 0 ? ` (${entries.length})` : ""}` },
-                  { id: "summary", label: "AI 复盘" },
-                  { id: "settings", label: "设置" },
-                ].map(t => (
-                  <button key={t.id} className="nav-tab" onClick={() => setView(t.id)} style={{
+                  { id: "write", label: t.nav.write },
+                  { id: "history", label: `${t.nav.history}${entries.length > 0 ? ` (${entries.length})` : ""}` },
+                  { id: "summary", label: t.nav.summary },
+                  { id: "settings", label: t.nav.settings },
+                ].map(tab => (
+                  <button key={tab.id} className="nav-tab" onClick={() => setView(tab.id)} style={{
                     background: "none", border: "none", padding: "11px 18px", fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", letterSpacing: ".04em",
-                    color: view === t.id ? "rgba(200,210,255,0.98)" : "rgba(155,165,210,0.7)",
-                    borderBottom: view === t.id ? "2px solid rgba(140,160,255,0.7)" : "2px solid transparent",
+                    color: view === tab.id ? "rgba(200,210,255,0.98)" : "rgba(155,165,210,0.7)",
+                    borderBottom: view === tab.id ? "2px solid rgba(140,160,255,0.7)" : "2px solid transparent",
                     transition: "all .2s",
-                  }}>{t.label}</button>
+                  }}>{tab.label}</button>
                 ))}
               </div>
             </nav>
@@ -1337,11 +1377,15 @@ ${profile}
                     <>
                       <Glass style={{ padding: "20px", marginBottom: 20 }}>
                         <div style={labelStyle}>
-                          <span>{isBackdate ? `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么` : "今天发生了什么"}</span>
+                          <span>{isBackdate
+                              ? (lang === "en" ? `What happened on ${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "that day"}?` : `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么`)
+                              : (lang === "en" ? "What happened today?" : "今天发生了什么")}</span>
                           {voiceOK && <VoiceBtn target="content" />}
                         </div>
                         <textarea value={content} onChange={e => setContent(e.target.value)} rows={7}
-                          placeholder={isBackdate ? "回忆一下那天——哪怕只是片段，写下来就有意义……" : "不用写得好，只要写得真。今天的情绪、遇到的事、脑子里转的东西……"}
+                          placeholder={isBackdate
+                            ? (lang === "en" ? "Think back to that day — even just fragments are worth capturing…" : "回忆一下那天——哪怕只是片段，写下来就有意义…")
+                            : t.write.placeholder}
                           style={{ ...inputStyle, minHeight: 180 }}
                         />
                         {voiceErr && <p style={{ fontSize: 11, color: "rgba(255,130,90,0.8)", marginTop: 6 }}>{voiceErr}</p>}
@@ -1350,7 +1394,7 @@ ${profile}
                       <Divider />
 
                       <Glass style={{ padding: "18px 20px", marginBottom: 20 }}>
-                        <div style={labelStyle}><span>{isBackdate ? "那天的心情" : "今天的心情"}</span></div>
+                        <div style={labelStyle}><span>{isBackdate ? (lang === "en" ? "Mood on that day" : "那天的心情") : t.write.moodLabel}</span></div>
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           {MOODS.map(m => (
                             <button key={m.v} className="mood-btn" onClick={() => setMood(m.v)} style={{
@@ -1369,11 +1413,11 @@ ${profile}
                         background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
                         color: "rgba(255,255,255,0.95)", boxShadow: "0 0 24px rgba(120,100,255,0.3)",
                         opacity: saving || !content.trim() ? .5 : 1, transition: "all .2s",
-                      }}>{saving ? "保存中…" : isBackdate ? `补记${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || ""}的日记` : "保存日记 · 生成今日一问"}</button>
+                      }}>{saving ? t.write.saving : isBackdate ? (lang === "en" ? `Save entry for ${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "that day"}` : `补记${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || ""}的日记`) : t.write.save}</button>
 
                       {justSaved && !generatingQ && (
                         <div className="anim-up" style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "rgba(100,200,150,0.8)" }}>
-                          ✓ 已保存{streak > 0 ? ` · 连续 ${streak} 天 🔥` : ""}
+                           {t.write.saved}{streak > 0 ? ` · ${t.write.streakDays(streak)} 🔥` : ""}
                         </div>
                       )}
                     </>
@@ -1389,7 +1433,7 @@ ${profile}
 
                       <Glass style={{ padding: "22px", marginBottom: 18, borderLeft: "3px solid rgba(140,120,255,0.6)" }}>
                         {generatingQ
-                          ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>正在读取你今天写的内容，为你生成专属问题…</p>
+                           ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>{lang === "en" ? "Reading today's entry and crafting a personalized question…" : "正在读取你今天写的内容，为你生成专属问题…"}</p>
                           : <p style={{ fontSize: 17, lineHeight: 1.8, color: "rgba(220,225,255,0.92)", fontStyle: "italic" }}>{aiQuestion}</p>
                         }
                       </Glass>
@@ -1398,11 +1442,11 @@ ${profile}
                         <>
                           <Glass style={{ padding: "18px 20px", marginBottom: 18 }}>
                             <div style={labelStyle}>
-                              <span>你的回答</span>
+                              <span>{lang === "en" ? "Your Answer" : "你的回答"}</span>
                               {voiceOK && <VoiceBtn target="answer" />}
                             </div>
                             <textarea value={aiAnswer} onChange={e => setAiAnswer(e.target.value)} rows={5}
-                              placeholder="诚实比深刻重要。哪怕只写「我不知道」……"
+                              placeholder={lang === "en" ? "Honest is better than deep. Even 'I don't know' works…" : "诚实比深刻重要。哪怕只写『我不知道』…"}
                               style={{ ...inputStyle, minHeight: 120 }}
                             />
                           </Glass>
@@ -1411,10 +1455,10 @@ ${profile}
                               flex: 1, padding: "13px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontFamily: "inherit", fontWeight: 600,
                               background: "linear-gradient(135deg,rgba(120,100,255,0.8),rgba(80,150,255,0.8))",
                               color: "rgba(255,255,255,0.95)", opacity: savingAnswer ? .5 : 1,
-                            }}>{savingAnswer ? "保存中…" : "保存回答，完成今天"}</button>
+                            }}>{savingAnswer ? t.write.saving : (lang === "en" ? "Save Answer & Finish" : "保存回答，完成今天")}</button>
                             <button onClick={() => { setAiQuestion(null); setAiAnswer(""); setContent(""); setMood(3); }} style={{
                               padding: "13px 16px", borderRadius: 8, background: "none", border: "1px solid rgba(100,120,200,0.25)", color: "rgba(140,160,200,0.5)", cursor: "pointer", fontSize: 13, fontFamily: "inherit",
-                            }}>跳过</button>
+                            }}>{t.write.questionSkip}</button>
                           </div>
                         </>
                       )}
@@ -1433,7 +1477,7 @@ ${profile}
                   {!loading && entries.length === 0 && (
                     <div style={{ textAlign: "center", color: "rgba(140,160,200,0.3)", padding: "80px 0", lineHeight: 2.5 }}>
                       <div style={{ fontSize: 40, marginBottom: 12, opacity: .5 }}>✦</div>
-                      还没有日记<br /><span style={{ fontSize: 12 }}>去「写今天」开始第一篇吧</span>
+                      还没有日记<br /><span style={{ fontSize: 12 }}>{lang === "en" ? "Go to 'Today' to write your first entry" : "去「写今天」开始第一篇吧"}</span>
                     </div>
                   )}
                   {entries.map(entry => {
@@ -1648,13 +1692,8 @@ ${profile}
 
                   {/* Storage info */}
                   <Glass style={{ padding: "20px", marginBottom: 16 }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>数据存储说明</h3>
-                    {[
-                      { icon: "🔒", title: "存储在哪里", desc: "日记和性格档案存储在云端数据库（Supabase PostgreSQL），与你的账号绑定，注册即永久保存。" },
-                      { icon: "📱", title: "跨设备访问", desc: "在任何设备上用相同账号登录即可看到所有日记，数据实时同步。" },
-                      { icon: "🤖", title: "AI 服务", desc: "AI 功能通过 OpenRouter 调用，支持自定义 API Key。免费额度用完后，在设置中填入你自己的 OpenRouter Key 即可继续使用。" },
-                      { icon: "🛡", title: "隐私", desc: "日记内容仅在你主动生成反思问题或复盘时发送给 AI 处理，不会被用于训练模型。" },
-                    ].map((item, i) => (
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>{t.settings.storageTitle}</h3>
+                    {t.settings.storage.map((item, i) => (
                       <div key={i} style={{ display: "flex", gap: 12, marginBottom: i < 3 ? 14 : 0 }}>
                         <span style={{ fontSize: 18, flexShrink: 0, marginTop: 2 }}>{item.icon}</span>
                         <div>
@@ -1667,14 +1706,8 @@ ${profile}
 
                   {/* How to use */}
                   <Glass style={{ padding: "20px" }}>
-                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>使用指南</h3>
-                    {[
-                      ["写今天", "先写日记，保存后 AI 会基于你今天的内容生成一个专属反思问题。回答它，或者跳过。"],
-                      ["补记功能", "页面顶部可以切换到过去3天内还没写的日期，进行补记。每个日期只能补记一次。"],
-                      ["今日一问", "每次保存日记后自动生成，基于你的日记内容和性格档案定制，不会让你焦虑，只是帮你多想一步。"],
-                      ["AI 复盘", "周复盘（≥5天）分析日记。周日可生成「本周」，周一-六可生成「上周」。上月复盘（≥15天）整合周复盘，去年复盘（≥180天）整合月复盘。每周/月/年只能生成一次。档案更新：周+0.1，月+0.3，年+1.0。"],
-                      ["坚持的秘诀", "不用每天写很多。哪怕三行也算。连续天数是给你看的，不是用来让你焦虑的。"],
-                    ].map(([title, desc], i) => (
+                    <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 14 }}>{t.settings.guideTitle}</h3>
+                    {t.settings.guide.map(([title, desc], i) => (
                       <div key={i} style={{ display: "flex", gap: 10, marginBottom: i < 3 ? 14 : 0 }}>
                         <div style={{ width: 20, height: 20, borderRadius: "50%", background: "rgba(130,110,255,0.25)", border: "1px solid rgba(150,130,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "rgba(190,175,255,0.9)", flexShrink: 0, marginTop: 2 }}>{i + 1}</div>
                         <div>
@@ -1733,21 +1766,55 @@ ${profile}
         )}
       </div>
 
+      {/* ════════ LANGUAGE SELECTION (first launch) ════════ */}
+      {!lang && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
+          background: "rgba(10,12,30,0.92)", backdropFilter: "blur(20px)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <Glass style={{ width: 340, padding: "40px 30px", textAlign: "center" }} className="anim-up">
+            <div style={{ fontSize: 32, marginBottom: 16 }}>✦</div>
+            <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)", marginBottom: 10 }}>
+              {translations.zh.langSelect.title}
+            </h2>
+            <p style={{ fontSize: 14, color: "rgba(160,175,220,0.7)", marginBottom: 30 }}>
+              {translations.zh.langSelect.subtitle}
+            </p>
+            <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+              <button onClick={() => switchLang("zh")} style={{
+                padding: "14px 32px", borderRadius: 10, border: "1px solid rgba(140,160,255,0.4)",
+                background: "rgba(80,100,180,0.2)", color: "rgba(220,230,255,0.95)",
+                fontSize: 18, cursor: "pointer", fontWeight: 600, transition: "all .2s"
+              }}>中文</button>
+              <button onClick={() => switchLang("en")} style={{
+                padding: "14px 32px", borderRadius: 10, border: "1px solid rgba(140,160,255,0.4)",
+                background: "rgba(80,100,180,0.2)", color: "rgba(220,230,255,0.95)",
+                fontSize: 18, cursor: "pointer", fontWeight: 600, transition: "all .2s"
+              }}>English</button>
+            </div>
+          </Glass>
+        </div>
+      )}
+
       {/* ════════════ AUTHENTICATION MODAL ════════════ */}
-      {showAuthModal && (
+      {lang && showAuthModal && (
         <div style={{
           position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
           background: "rgba(10,12,30,0.85)", backdropFilter: "blur(20px)", zIndex: 9999,
           display: "flex", alignItems: "center", justifyContent: "center"
         }}>
           <Glass style={{ width: 340, padding: "30px", display: "flex", flexDirection: "column", gap: 16 }}>
-            <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)", textAlign: "center", marginBottom: 8 }}>
-              {authMode === "login" ? "登录 日记" : "注册 新账号"}
-            </h2>
+            <div style={{ textAlign: "center", marginBottom: 4 }}>
+              <div style={{ fontSize: 13, color: "rgba(140,155,200,0.6)", marginBottom: 4 }}>{t.auth.tagline}</div>
+              <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)" }}>
+                {authMode === "login" ? t.auth.loginTitle : t.auth.registerTitle}
+              </h2>
+            </div>
 
             <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <input
-                type="text" required placeholder="用户名 (Username)"
+                type="text" required placeholder={t.auth.usernamePlaceholder}
                 value={authUsername} onChange={e => setAuthUsername(e.target.value)}
                 style={{
                   padding: "12px 14px", borderRadius: 8,
@@ -1758,7 +1825,7 @@ ${profile}
                 }}
               />
               <input
-                type="password" required placeholder="密码 (Password)"
+                type="password" required placeholder={t.auth.passwordPlaceholder}
                 value={authPassword} onChange={e => setAuthPassword(e.target.value)}
                 style={{
                   padding: "12px 14px", borderRadius: 8,
@@ -1775,17 +1842,26 @@ ${profile}
                 background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
                 color: "rgba(255,255,255,0.95)", fontWeight: 600, fontSize: 15, opacity: authLoading ? .6 : 1
               }}>
-                {authLoading ? "请稍候..." : (authMode === "login" ? "登 录" : "注 册")}
+                {authLoading
+                  ? (authMode === "login" ? t.auth.loggingIn : t.auth.registering)
+                  : (authMode === "login" ? t.auth.loginBtn : t.auth.registerBtn)}
               </button>
             </form>
 
-            <div style={{ textAlign: "center", marginTop: 8 }}>
+            <div style={{ textAlign: "center", marginTop: 4 }}>
               <button
                 type="button"
                 onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}
                 style={{ background: "none", border: "none", color: "rgba(160,180,255,0.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}
               >
-                {authMode === "login" ? "没有账号？点击注册" : "已有账号？点击登录"}
+                {authMode === "login" ? t.auth.switchToRegister : t.auth.switchToLogin}
+              </button>
+            </div>
+
+            {/* Lang switcher */}
+            <div style={{ textAlign: "center", borderTop: "1px solid rgba(100,120,200,0.15)", paddingTop: 12 }}>
+              <button onClick={() => { setLang(null); setLangState(null); }} style={{ background: "none", border: "none", color: "rgba(120,140,180,0.5)", fontSize: 11, cursor: "pointer" }}>
+                {lang === "zh" ? "Switch to English" : "切换中文"}
               </button>
             </div>
           </Glass>
