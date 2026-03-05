@@ -356,6 +356,7 @@ export default function App() {
   const [aiAnswer, setAiAnswer] = useState("");
   const [generatingQ, setGeneratingQ] = useState(false);
   const [savingAnswer, setSavingAnswer] = useState(false);
+  const [aiTargetId, setAiTargetId] = useState(null); // track which entry the AI is asking about
 
   // Voice
   const [recording, setRecording] = useState(false);
@@ -563,6 +564,7 @@ export default function App() {
     setGeneratingQ(true);
     setAiQuestion(null);
     setAiAnswer("");
+    setAiTargetId(entry.id);
     try {
       const moodLabel = MOODS.find(m => m.v === mood)?.label || t.write.moods[2];
       const system = (lang === "en"
@@ -601,11 +603,11 @@ Rules:
   const saveAnswer = async () => {
     if (!aiAnswer.trim()) { setAiQuestion(null); setAiAnswer(""); return; }
     setSavingAnswer(true);
-    const latestId = entries[0]?.id;
-    if (latestId) {
-      const updated = { ...entries[0], answer: aiAnswer.trim() };
+    const targetEntry = entries.find(e => e.id === aiTargetId);
+    if (targetEntry) {
+      const updated = { ...targetEntry, answer: aiAnswer.trim() };
       await saveEntry(updated);
-      setEntries(prev => prev.map(e => e.id === latestId ? updated : e));
+      setEntries(prev => prev.map(e => e.id === aiTargetId ? updated : e));
     }
     setSavingAnswer(false);
     setAiQuestion(null);
