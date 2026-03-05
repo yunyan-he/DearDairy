@@ -338,6 +338,7 @@ export default function App() {
 
   // Reminder bubble
   const [reminder, setReminder] = useState(null); // { type: 'week'|'month'|'year', label: string }
+  const [showProfileNudge, setShowProfileNudge] = useState(false);
   const [reminderDismissed, setReminderDismissed] = useState(false);
 
   // Write state
@@ -1111,12 +1112,14 @@ ${profile}
       setProfileVersion("v1.0");
       await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: generatedProfile }) });
       setNeedsOnboarding(false);
+      setShowProfileNudge(true);
     } catch {
       const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案生成失败，AI将通过后续日记输入逐渐了解\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 初始档案（问卷生成失败）`;
       setProfile(fb);
       setProfileVersion("v1.0");
       await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
       setNeedsOnboarding(false);
+      setShowProfileNudge(true);
     }
   };
 
@@ -1282,6 +1285,44 @@ ${profile}
                   background: "linear-gradient(135deg,rgba(130,110,255,0.85),rgba(90,150,255,0.85))",
                   color: "rgba(255,255,255,0.95)", fontSize: 13, fontFamily: "inherit", fontWeight: 600,
                 }}>去生成{reminder.type === "week" ? "周" : reminder.type === "month" ? "月" : "年"}度复盘</button>
+              </div>
+            )}
+
+            {/* ── PROFILE NUDGE BUBBLE (post-onboarding) ── */}
+            {showProfileNudge && (
+              <div className="bubble-in" style={{
+                position: "fixed", bottom: 28, left: 24, zIndex: 100, maxWidth: 260,
+                background: "linear-gradient(135deg,rgba(25,20,70,0.96),rgba(15,25,65,0.96))",
+                border: "1px solid rgba(180,160,255,0.55)", borderRadius: 16, padding: "16px 18px",
+                backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                boxShadow: "0 8px 32px rgba(120,90,255,0.28)",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <span style={{ fontSize: 18 }}>✦</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "rgba(220,210,255,0.97)" }}>
+                      {lang === "en" ? "Your profile is ready!" : "档案生成完成！"}
+                    </span>
+                  </div>
+                  <button onClick={() => setShowProfileNudge(false)} style={{ background: "none", border: "none", color: "rgba(160,160,200,0.5)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: "0 0 0 8px", flexShrink: 0 }}>×</button>
+                </div>
+                <div style={{ fontSize: 12.5, color: "rgba(175,180,235,0.75)", marginBottom: 14, lineHeight: 1.6 }}>
+                  {lang === "en"
+                    ? "The AI has built an initial profile based on your answers. Want to take a look?"
+                    : "AI 已根据你的回答生成了初始性格档案，去看看它对你的第一印象？"}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => { setView("settings"); setShowProfileNudge(false); }} style={{
+                    flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: "pointer",
+                    background: "linear-gradient(135deg,rgba(140,110,255,0.88),rgba(90,150,255,0.88))",
+                    color: "rgba(255,255,255,0.96)", fontSize: 12.5, fontFamily: "inherit", fontWeight: 600,
+                  }}>{lang === "en" ? "View Profile →" : "查看档案 →"}</button>
+                  <button onClick={() => setShowProfileNudge(false)} style={{
+                    padding: "8px 10px", borderRadius: 8,
+                    background: "none", border: "1px solid rgba(120,140,200,0.25)",
+                    color: "rgba(140,160,200,0.6)", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit",
+                  }}>{lang === "en" ? "Later" : "稍后"}</button>
+                </div>
               </div>
             )}
 
