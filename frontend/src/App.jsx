@@ -286,8 +286,11 @@ export default function App() {
 
   // Onboarding vs Main App
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0); // 0=intro, 1-3=questions, 4=generating
-  const [obAnswers, setObAnswers] = useState({ q1: "", q2: "", q3: "", extra: "" });
+  const [onboardingStep, setOnboardingStep] = useState(0); // 0=intro, 1-7=questions, 8=generating
+  const [obAnswers, setObAnswers] = useState({ q1: "", q2: "", q3: "", q4: "", q5: "", q6: "", q7: "" });
+
+  // Recent observations (Plan B structured storage)
+  const [observations, setObservations] = useState([]);
 
   // Reminder bubble
   const [reminder, setReminder] = useState(null); // { type: 'week'|'month'|'year', label: string }
@@ -394,6 +397,7 @@ export default function App() {
     const fetchProfileState = async () => { try { const r = await authedFetch("/api/profile"); if (r.ok) return r.json(); } catch { } return null; };
     const loadSummaries = async () => { try { const r = await authedFetch("/api/summaries"); if (r.ok) return r.json(); } catch { } return []; };
     const loadMe = async () => { try { const r = await authedFetch("/api/me"); if (r.ok) return r.json(); } catch { } return null; };
+    const loadObservations = async () => { try { const r = await authedFetch("/api/observations"); if (r.ok) return r.json(); } catch { } return []; };
 
     Promise.all([
       loadEntries(),
@@ -401,7 +405,8 @@ export default function App() {
       Promise.resolve(localStorage.getItem("last-reminder-dismissed")),
       loadSummaries(),
       loadMe(),
-    ]).then(([e, profileState, lastDismissed, summaries, me]) => {
+      loadObservations(),
+    ]).then(([e, profileState, lastDismissed, summaries, me, obs]) => {
       setEntries(e);
       setStreak(calcStreak(e));
       if (profileState?.content) {
@@ -415,6 +420,7 @@ export default function App() {
         setApiKeyInput(me.api_key || "");
         setUsageCount(me.usage_count || 0);
       }
+      if (obs) setObservations(obs);
       setLoading(false);
 
       // Determine if a reminder bubble should show
@@ -745,33 +751,132 @@ ${analysisMode.includes("元分析") ? `
       setSummaryHistory(updatedHistory);
       await fetch("/api/summaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSummary) });
 
-      // Auto-update profile (gradual, frequency-limited by type)
-      try {
-        const versionIncrement = { week: 0.1, month: 0.3, year: 1.0 }[sumType];
-        const currentVer = parseFloat(profileVersion.replace(/v/, "")) || 1.0;
-        const targetVer = (currentVer + versionIncrement).toFixed(1);
+      // ── Post-summary side effects ──
+      const versionIncrement = { week: 0.1, month: 0.3, year: 1.0 }[sumType];
+      const currentVer = parseFloat(profileVersion.replace(/v/, "")) || 1.0;
+      const targetVer = (currentVer + versionIncrement).toFixed(1);
 
-        const updateSys = `你正在维护一个用户的长期性格档案。当前档案如下：
+      // Weekly: extract 1-2 observations and store them structurally
+      if (sumType === "week") {
+        try {
+          const obsSys = `你是用户的成长伙伴。根据以下周复盘内容，提取1-2条「近期观察」。
+要求：
+- 每条不超过40字，描述用户近期真实出现的行为/情绪模式
+- 用「她」称呼用户
+- 只输出观察条目本身，每条一行，不加序号或符号前缀
+- 最多输出2条`;
+          const obsRaw = await callAI(obsSys, result.slice(0, 800), 300);
+          const obsLines = obsRaw.split("\n").map(l => l.trim()).filter(l => l.length > 5 && l.length < 100);
+          const newObs = [];
+          for (const line of obsLines.slice(0, 2)) {
+            const r2 = await authedFetch("/api/observations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: line }) });
+            if (r2.ok) newObs.push(await r2.json());
+          }
+          if (newObs.length) setObservations(prev => [...newObs, ...prev]);
+        } catch { }
 
+        // Weekly profile update: only touch core sections, not 近期观察
+        try {
+          const updateSys = `你正在维护用户的长期性格档案。当前档案：
 ${profile}
 
-你刚刚生成了一份${typeLabel}度复盘。你的任务是对档案做「${sumType === "week" ? "微小" : sumType === "month" ? "适度" : "较大"}调整」。
+这是本周复盘。只对档案的四个核心区块（核心特征、主要困境、成长动力与障碍、与用户互动原则）做「微小调整」。
+规则：
+1. 只能在现有条目后追加补充说明（用 → 标注），不能删除任何条目
+2. 「近期观察」区块不要动，不要在档案里写近期观察
+3. 在末尾追加版本日志：[v${profileVersion} → v${targetVer}] ${now.toLocaleDateString("zh-CN")} 周复盘：一句话说明改了什么
+4. 直接输出完整档案文本`;
+          const newProfile = await callAI(updateSys, `本次周复盘摘要：\n${result.slice(0, 500)}`, 700);
+          if (newProfile && newProfile.length > 200) {
+            setProfile(newProfile);
+            setProfileVersion(`v${targetVer}`);
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+          }
+        } catch { }
+      }
 
-核心原则：
-1. 档案反映的是长期稳定的性格特征，绝不因短期表现就大改
-2. ${sumType === "week" ? "周复盘只允许：在「近期观察」区域追加一条临时记录，或在现有条目后加一句补充（用 → 标注）" : ""}${sumType === "month" ? "月复盘允许：升级1-2条反复出现的临时观察为正式条目，或更新现有条目的描述" : ""}${sumType === "year" ? "年复盘允许：全面审视档案，该删的删（明显过时的），该升级的升级，该新增的新增" : ""}
-3. 不得删除任何原有核心条目（除非是年度复盘且该条目已明显过时）
-4. 在档案末尾追加一行：「[v${profileVersion} → v${targetVer}] ${now.toLocaleDateString("zh-CN")} ${typeLabel}复盘：」加一句话说明本次改了什么
-5. 版本号设为 v${targetVer}
-6. 直接输出完整档案，不要额外解释`;
+      // Monthly: promote stable observations + expire old ones
+      if (sumType === "month") {
+        try {
+          const obsList = observations.map(o => {
+            const daysSince = Math.floor((Date.now() - new Date(o.last_seen_at).getTime()) / 86400000);
+            return `ID:${o.id} | 已观察${o.times_seen}次 | 距上次${daysSince}天 | ${o.content}`;
+          }).join("\n");
 
-        const newProfile = await callAI(updateSys, `本次复盘内容摘要：\n${result.slice(0, 600)}`, 800);
-        if (newProfile && newProfile.length > 200) {
-          setProfile(newProfile);
-          setProfileVersion(`v${targetVer}`);
-          await fetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
-        }
-      } catch { }
+          const monthObsSys = `你正在进行月度性格档案审核。以下是用户的「近期观察」列表和本月复盘内容。
+
+近期观察列表：
+${obsList || "（暂无观察记录）"}
+
+请严格以JSON格式输出，不要输出任何其他内容：
+{
+  "promote": [id列表，这些观察已稳定重复，应升级为核心档案条目],
+  "seen_again": [id列表，这些观察在本月复盘内容中再次出现，需更新last_seen_at],
+  "expire": [id列表，这些观察超过60天未再出现，应删除]
+}`;
+          const aiDecision = await callAI(monthObsSys, `本月复盘内容：\n${result.slice(0, 800)}`, 400);
+
+          let decision = { promote: [], seen_again: [], expire: [] };
+          try {
+            const jsonMatch = aiDecision.match(/\{[\s\S]*\}/);
+            if (jsonMatch) decision = JSON.parse(jsonMatch[0]);
+          } catch { }
+
+          // Apply seen_again: increment times_seen + update last_seen_at
+          for (const id of (decision.seen_again || [])) {
+            const r2 = await authedFetch(`/api/observations/${id}/seen`, { method: "POST" });
+            if (r2.ok) {
+              const updated = await r2.json();
+              setObservations(prev => prev.map(o => o.id === id ? updated : o));
+            }
+          }
+
+          // Collect promoted content for profile update
+          const promotedContents = (decision.promote || []).map(id => observations.find(o => o.id === id)?.content).filter(Boolean);
+
+          // Delete expired and promoted from DB
+          const toDelete = [...(decision.expire || []), ...(decision.promote || [])];
+          for (const id of toDelete) {
+            await authedFetch(`/api/observations/${id}`, { method: "DELETE" });
+          }
+          setObservations(prev => prev.filter(o => !toDelete.includes(o.id)));
+
+          // Monthly profile update: include promoted observations into core sections
+          const updateSys = `你正在进行月度性格档案更新。当前档案：
+${profile}
+
+以下观察经过反复验证，已被确认为稳定特征，请将它们整合进档案的对应区块（核心特征/主要困境/成长动力/互动原则）：
+${promotedContents.length ? promotedContents.map(c => `- ${c}`).join("\n") : "（本月无升级项）"}
+
+规则：
+1. 月复盘可以更新现有条目描述
+2. 「近期观察」区块不要写入档案，由系统单独管理
+3. 在末尾追加：[v${profileVersion} → v${targetVer}] ${now.toLocaleDateString("zh-CN")} 月复盘：一句话说明
+4. 直接输出完整档案`;
+          const newProfile = await callAI(updateSys, `本月复盘摘要：\n${result.slice(0, 600)}`, 900);
+          if (newProfile && newProfile.length > 200) {
+            setProfile(newProfile);
+            setProfileVersion(`v${targetVer}`);
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+          }
+        } catch { }
+      }
+
+      // Yearly: full profile reconstruction (no observation changes, just big profile update)
+      if (sumType === "year") {
+        try {
+          const updateSys = `年度档案审视。当前档案：
+${profile}
+
+规则：年复盘可以全面重构档案——删除明显过时的条目、升级、新增。保持四大区块结构。在末尾追加版本日志。直接输出完整档案。`;
+          const newProfile = await callAI(updateSys, `年度复盘摘要：\n${result.slice(0, 800)}`, 1000);
+          if (newProfile && newProfile.length > 200) {
+            setProfile(newProfile);
+            setProfileVersion(`v${targetVer}`);
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+          }
+        } catch { }
+      }
     } catch (err) {
       setSumText(`生成出错：${err.message || "请重试"}。`);
     }
@@ -905,36 +1010,141 @@ ${profile}
   // ══════════════════════════════════════════════════════
   // ONBOARDING LOGIC
   // ══════════════════════════════════════════════════════
+
+  // 6 MCQ questions + 1 freeform = 7 total
+  const OB_QUESTIONS = [
+    {
+      key: "q1", label: "面对压力或挫折时，你通常的第一反应是？",
+      opts: ["倾向逃避，刷手机、睡觉转移注意力", "内耗自责，觉得自己不够好", "硬抗死磕，想马上解决", "找信任的人倾诉"]
+    },
+    {
+      key: "q2", label: "在执行计划时，你属于哪种类型？",
+      opts: ["完美主义的拖延症（等准备好再说）", "三分钟热度（开始很猛，很难坚持）", "想到就做（行动力强但缺乏规划）", "按部就班（稳扎稳打型）"]
+    },
+    {
+      key: "q3", label: "社交对你来说是什么感觉？",
+      opts: ["充电——和人在一起让我充满活力", "放电——独处才能恢复能量，社交会累", "看情况——亲密朋友充电，陌生场合放电", "无所谓，都差不多"]
+    },
+    {
+      key: "q4", label: "什么最容易让你情绪失控或陷入内耗？",
+      opts: ["被人否定或批评", "事情不在预期内（突发变化）", "感觉自己落后于同龄人", "关系中的冷漠或疏远"]
+    },
+    {
+      key: "q5", label: "面对失败或批评时，你通常会怎么对待自己？",
+      opts: ["狠狠自责，反复回想哪里出了错", "短暂难受，然后试着复盘改进", "快速翻篇，不喜欢停留在负面情绪里", "向外归因，觉得是外部原因"]
+    },
+    {
+      key: "q6", label: "你最容易被什么点燃？",
+      opts: ["看到别人成功，想追上去", "读到一段话/视频触动了自己", "外部截止日期/压力", "自己设定的目标和仪式感"]
+    },
+  ];
+
   const handleOnboardingSubmit = async () => {
-    setOnboardingStep(4); // Generating state
-    const answers = `
-1. 面对压力时的反应：${obAnswers.q1}
-2. 计划与行动力：${obAnswers.q2}
-3. 补充特质：${obAnswers.extra || "无"}
-`;
-    const sys = "你是一个出色的性格侧写师。用户刚刚注册了日记日记本，请根据她以下的回答，生成一段100字左右的初始性格档案。不要任何客套话，直接输出档案文本：\n\n" + answers;
+    setOnboardingStep(8); // Generating state
+    const answers = OB_QUESTIONS.map((q, i) => `${i + 1}. ${q.label}\n   回答：${obAnswers[q.key] || "未作答"}`).join("\n") +
+      `\n7. 你希望日记本特别注意哪些事？\n   回答：${obAnswers.q7 || "无"}`;
+
+    const sys = `你是一个出色的性格侧写师。用户刚注册了私人日记本，请根据她的回答，生成结构化的初始性格档案。
+
+严格按以下格式输出，不要任何其他文字：
+
+【用户性格档案 v1.0】
+
+核心特征：
+- （2-3条，描述她稳定的性格底色）
+
+主要困境：
+- （2-3条，描述她反复遇到的挑战或模式）
+
+成长动力与障碍：
+- （2条，动力来源和最大阻力）
+
+与用户互动原则：
+- （2-3条，AI陪她时要遵守的规则，基于她的反应模式）
+
+版本日志：
+- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 初始档案由用户问卷生成`;
 
     try {
-      const generatedProfile = await callAI(sys, "请生成档案。");
+      const generatedProfile = await callAI(sys, `用户回答：\n${answers}`, 800);
       setProfile(generatedProfile);
       setProfileVersion("v1.0");
       await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: generatedProfile }) });
       setNeedsOnboarding(false);
     } catch {
-      // Fallback
-      const fb = "【基础设定】\n基于初始问答生成的档案失败，AI将通过后续用户的日记输入，逐渐了解。";
+      const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案生成失败，AI将通过后续日记输入逐渐了解\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 初始档案（问卷生成失败）`;
       setProfile(fb);
       setProfileVersion("v1.0");
+      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
       setNeedsOnboarding(false);
     }
   };
 
   const skipOnboarding = async () => {
-    const fb = "【基础设定】\nAI将基于空白预设，通过后续用户的日记输入，从零开始逐渐构建专属的性格档案。";
+    const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案从零开始，AI将通过阅读日记逐渐了解用户\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 用户选择跳过问卷，档案待AI学习积累`;
     setProfile(fb);
     setProfileVersion("v1.0");
     await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
     setNeedsOnboarding(false);
+  };
+
+  // Helper: render a single MCQ + freeform question step
+  const renderObQuestion = (qIndex) => {
+    const q = OB_QUESTIONS[qIndex];
+    const val = obAnswers[q.key];
+    const isLast = qIndex === OB_QUESTIONS.length - 1; // Q6 → next is Q7 (freeform)
+    const total = OB_QUESTIONS.length + 1; // 6 MCQ + 1 freeform
+    return (
+      <>
+        <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>{qIndex + 1} / {total}</div>
+        <h3 style={{ fontSize: 17, marginBottom: 20, color: "rgba(210,220,255,0.9)", lineHeight: 1.5 }}>{q.label}</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {q.opts.map(opt => (
+            <button key={opt} onClick={() => setObAnswers(p => ({ ...p, [q.key]: opt }))} style={{
+              padding: "12px 14px", borderRadius: 8, textAlign: "left",
+              background: val === opt ? "rgba(120,100,255,0.25)" : "rgba(80,100,160,0.15)",
+              border: `1px solid ${val === opt ? "rgba(160,140,255,0.7)" : "rgba(120,140,200,0.3)"}`,
+              color: "rgba(200,210,255,0.9)", cursor: "pointer", fontSize: 14, transition: "all .2s"
+            }}>
+              {opt}
+            </button>
+          ))}
+          <input
+            type="text" value={val}
+            onChange={e => setObAnswers(p => ({ ...p, [q.key]: e.target.value }))}
+            placeholder="或者用自己的话说……"
+            style={{
+              width: "100%", padding: "11px 14px", borderRadius: 8, marginTop: 4,
+              background: "rgba(10,14,42,0.5)", border: "1px solid rgba(120,140,220,0.28)",
+              color: "rgba(235,238,255,0.95)", fontFamily: "'Crimson Pro','Noto Serif SC',serif",
+              fontSize: 14, outline: "none"
+            }}
+          />
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            {qIndex > 0 && (
+              <button onClick={() => setOnboardingStep(qIndex)} style={{
+                padding: "12px", borderRadius: 8, background: "none",
+                border: "1px solid rgba(120,140,200,0.3)", color: "rgba(180,190,230,0.8)",
+                cursor: "pointer", flex: 1,
+              }}>← 上一题</button>
+            )}
+            <button
+              onClick={() => { if (val.trim()) setOnboardingStep(qIndex + 2); }}
+              disabled={!val.trim()}
+              style={{
+                padding: "12px", borderRadius: 8, border: "none",
+                cursor: val.trim() ? "pointer" : "not-allowed", flex: 2,
+                background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
+                color: "white", fontWeight: 600, fontSize: 14, opacity: val.trim() ? 1 : 0.4,
+                transition: "all .2s",
+              }}
+            >
+              {isLast ? "下一题 →" : "下一题 →"}
+            </button>
+          </div>
+        </div>
+      </>
+    );
   };
 
   // ══════════════════════════════════════════════════════
@@ -955,140 +1165,52 @@ ${profile}
                 <>
                   <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,230,255,0.95)", marginBottom: 16 }}>欢迎来到你的专属日记</h2>
                   <p style={{ fontSize: 16, lineHeight: 1.8, color: "rgba(180,190,230,0.8)", marginBottom: 30 }}>
-                    在这里，AI 会根据你的性格给予最懂你的回应。
-                    <br />为了让它更了解你，我们准备了 3 个简单的小问题。
+                    在这里，AI 会根据你的性格给予最懂你的回应。<br />
+                    7 个小问题，帮它从第一天就真正了解你。
                   </p>
-                  <button onClick={() => setOnboardingStep(1)} className="btn-gold" style={{ padding: "14px 30px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 15, fontFamily: "inherit", fontWeight: 600, background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white", marginBottom: 16, width: "100%" }}>
-                    开始设定 (1分钟)
-                  </button>
+                  <button onClick={() => setOnboardingStep(1)} className="btn-gold" style={{
+                    padding: "14px 30px", borderRadius: 8, border: "none", cursor: "pointer",
+                    fontSize: 15, fontFamily: "inherit", fontWeight: 600, width: "100%", marginBottom: 16,
+                    background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white"
+                  }}>开始设定 (约2分钟)</button>
                   <button onClick={skipOnboarding} style={{ background: "none", border: "none", color: "rgba(140,160,200,0.6)", cursor: "pointer", fontSize: 13, textDecoration: "underline" }}>
                     跳过，让 AI 随时间慢慢懂我
                   </button>
                 </>
               )}
 
-              {onboardingStep === 1 && (
-                <>
-                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>1 / 3</div>
-                  <h3 style={{ fontSize: 18, marginBottom: 24, color: "rgba(210,220,255,0.9)" }}>面对压力或挫折时，你通常的第一反应是？</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {["倾向逃避，想刷手机转移注意力", "内耗自责，觉得自己不够好", "硬抗死磕，想马上解决", "找信任的人倾诉"].map(opt => (
-                      <button key={opt} onClick={() => setObAnswers(p => ({ ...p, q1: opt }))} style={{
-                        padding: "13px 14px", borderRadius: 8, textAlign: "left",
-                        background: obAnswers.q1 === opt ? "rgba(120,100,255,0.25)" : "rgba(80,100,160,0.15)",
-                        border: `1px solid ${obAnswers.q1 === opt ? "rgba(160,140,255,0.7)" : "rgba(120,140,200,0.3)"}`,
-                        color: "rgba(200,210,255,0.9)", cursor: "pointer", fontSize: 14, transition: "all .2s"
-                      }}>
-                        {opt}
-                      </button>
-                    ))}
-                    <div style={{ position: "relative", marginTop: 4 }}>
-                      <input
-                        type="text"
-                        value={obAnswers.q1}
-                        onChange={e => setObAnswers(p => ({ ...p, q1: e.target.value }))}
-                        placeholder="或者用自己的话说……"
-                        style={{
-                          width: "100%", padding: "11px 14px", borderRadius: 8,
-                          background: "rgba(10,14,42,0.5)",
-                          border: "1px solid rgba(120,140,220,0.28)",
-                          color: "rgba(235,238,255,0.95)",
-                          fontFamily: "'Crimson Pro','Noto Serif SC',serif",
-                          fontSize: 14, outline: "none"
-                        }}
-                      />
-                    </div>
-                    <button
-                      onClick={() => { if (obAnswers.q1.trim()) setOnboardingStep(2); }}
-                      disabled={!obAnswers.q1.trim()}
-                      style={{
-                        marginTop: 4, padding: "13px", borderRadius: 8, border: "none", cursor: obAnswers.q1.trim() ? "pointer" : "not-allowed",
-                        background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
-                        color: "white", fontWeight: 600, fontSize: 14, opacity: obAnswers.q1.trim() ? 1 : 0.4,
-                        transition: "all .2s"
-                      }}
-                    >
-                      下一题 →
-                    </button>
-                  </div>
-                </>
-              )}
+              {/* Steps 1-6: MCQ questions via helper */}
+              {onboardingStep >= 1 && onboardingStep <= 6 && renderObQuestion(onboardingStep - 1)}
 
-              {onboardingStep === 2 && (
+              {/* Step 7: Freeform notes */}
+              {onboardingStep === 7 && (
                 <>
-                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>2 / 3</div>
-                  <h3 style={{ fontSize: 18, marginBottom: 24, color: "rgba(210,220,255,0.9)" }}>在执行计划时，你属于哪种类型？</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {["完美主义的拖延症（等准备好再说）", "三分钟热度（开始很猛，很难坚持）", "想到就做（行动力强但缺乏规划）", "按部就班（稳扎稳打型）"].map(opt => (
-                      <button key={opt} onClick={() => setObAnswers(p => ({ ...p, q2: opt }))} style={{
-                        padding: "13px 14px", borderRadius: 8, textAlign: "left",
-                        background: obAnswers.q2 === opt ? "rgba(120,100,255,0.25)" : "rgba(80,100,160,0.15)",
-                        border: `1px solid ${obAnswers.q2 === opt ? "rgba(160,140,255,0.7)" : "rgba(120,140,200,0.3)"}`,
-                        color: "rgba(200,210,255,0.9)", cursor: "pointer", fontSize: 14, transition: "all .2s"
-                      }}>
-                        {opt}
-                      </button>
-                    ))}
-                    <div style={{ position: "relative", marginTop: 4 }}>
-                      <input
-                        type="text"
-                        value={obAnswers.q2}
-                        onChange={e => setObAnswers(p => ({ ...p, q2: e.target.value }))}
-                        placeholder="或者用自己的话说……"
-                        style={{
-                          width: "100%", padding: "11px 14px", borderRadius: 8,
-                          background: "rgba(10,14,42,0.5)",
-                          border: "1px solid rgba(120,140,220,0.28)",
-                          color: "rgba(235,238,255,0.95)",
-                          fontFamily: "'Crimson Pro','Noto Serif SC',serif",
-                          fontSize: 14, outline: "none"
-                        }}
-                      />
-                    </div>
-                    <button
-                      onClick={() => { if (obAnswers.q2.trim()) setOnboardingStep(3); }}
-                      disabled={!obAnswers.q2.trim()}
-                      style={{
-                        marginTop: 4, padding: "13px", borderRadius: 8, border: "none", cursor: obAnswers.q2.trim() ? "pointer" : "not-allowed",
-                        background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
-                        color: "white", fontWeight: 600, fontSize: 14, opacity: obAnswers.q2.trim() ? 1 : 0.4,
-                        transition: "all .2s"
-                      }}
-                    >
-                      下一题 →
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {onboardingStep === 3 && (
-                <>
-                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>3 / 3</div>
-                  <h3 style={{ fontSize: 18, marginBottom: 16, color: "rgba(210,220,255,0.9)" }}>最后，有什么是你希望日记本特别注意的？</h3>
-                  <p style={{ fontSize: 13, color: "rgba(150,160,200,0.7)", marginBottom: 20 }}>比如：不要给我打鸡血、我很容易嫉妒同龄人、多鼓励我...</p>
+                  <div style={{ fontSize: 12, color: "rgba(140,150,200,0.6)", marginBottom: 12 }}>7 / 7</div>
+                  <h3 style={{ fontSize: 17, marginBottom: 12, color: "rgba(210,220,255,0.9)", lineHeight: 1.5 }}>最后，有什么是你希望日记本特别注意的？</h3>
+                  <p style={{ fontSize: 13, color: "rgba(150,160,200,0.7)", marginBottom: 18 }}>比如：不要给我打鸡血、我很容易嫉妒同龄人、请用温柔但直接的语气……（选填）</p>
                   <textarea
-                    value={obAnswers.extra}
-                    onChange={e => setObAnswers(p => ({ ...p, extra: e.target.value }))}
-                    placeholder="选填，畅所欲言..."
+                    value={obAnswers.q7}
+                    onChange={e => setObAnswers(p => ({ ...p, q7: e.target.value }))}
+                    placeholder="畅所欲言……"
                     style={{
                       width: "100%", background: "rgba(10,14,42,0.5)",
                       border: "1px solid rgba(120,140,220,0.28)", borderRadius: 8,
                       color: "rgba(235,238,255,0.95)", fontFamily: "'Crimson Pro','Noto Serif SC',serif",
-                      fontSize: 16, lineHeight: 1.9, padding: "14px 16px", minHeight: 120, marginBottom: 20
+                      fontSize: 15, lineHeight: 1.9, padding: "14px 16px", minHeight: 110, marginBottom: 18
                     }}
                   />
-                  <div style={{ display: "flex", gap: 12 }}>
-                    <button onClick={() => setOnboardingStep(2)} style={{ padding: "14px", borderRadius: 8, background: "none", border: "1px solid rgba(120,140,200,0.3)", color: "rgba(180,190,230,0.8)", cursor: "pointer", flex: 1 }}>
-                      上一步
-                    </button>
-                    <button onClick={handleOnboardingSubmit} className="btn-gold" style={{ padding: "14px", borderRadius: 8, border: "none", cursor: "pointer", flex: 2, background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white", fontWeight: 600 }}>
-                      生成我的档案
-                    </button>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => setOnboardingStep(6)} style={{ padding: "13px", borderRadius: 8, background: "none", border: "1px solid rgba(120,140,200,0.3)", color: "rgba(180,190,230,0.8)", cursor: "pointer", flex: 1 }}>← 上一步</button>
+                    <button onClick={handleOnboardingSubmit} className="btn-gold" style={{
+                      padding: "13px", borderRadius: 8, border: "none", cursor: "pointer", flex: 2,
+                      background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))", color: "white", fontWeight: 600
+                    }}>生成我的档案 ✦</button>
                   </div>
                 </>
               )}
 
-              {onboardingStep === 4 && (
+              {/* Step 8: Generating spinner */}
+              {onboardingStep === 8 && (
                 <div style={{ padding: "40px 0" }}>
                   <div className="generating" style={{ fontSize: 32, marginBottom: 20 }}>✦</div>
                   <h3 style={{ fontSize: 18, color: "rgba(210,220,255,0.9)", marginBottom: 10 }}>正在为你侧写专属档案...</h3>
@@ -1484,6 +1606,43 @@ ${profile}
                     </div>
                     <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
                       这是 AI 目前对你的了解。每次生成复盘后，它会根据你最新的日记内容悄悄更新这份档案，记录你真实的成长轨迹。你可以在这里看到它对你的理解在随时间发生怎样的变化。
+                    </p>
+                  </Glass>
+
+                  {/* Recent Observations block */}
+                  <Glass style={{ padding: "20px", marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em" }}>近期观察</h3>
+                      <span style={{ fontSize: 11, color: "rgba(140,155,210,0.5)" }}>每周复盘后追加 · 月复盘审核</span>
+                    </div>
+                    {observations.length === 0 ? (
+                      <p style={{ fontSize: 13, color: "rgba(120,135,190,0.5)", fontStyle: "italic" }}>完成第一次周复盘后，AI 会开始积累近期观察。</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        {observations.map(obs => {
+                          const daysAgo = Math.floor((Date.now() - new Date(obs.last_seen_at).getTime()) / 86400000);
+                          const createdDays = Math.floor((Date.now() - new Date(obs.created_at).getTime()) / 86400000);
+                          return (
+                            <div key={obs.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "rgba(80,100,160,0.1)", borderRadius: 8, border: "1px solid rgba(100,120,200,0.2)" }}>
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontSize: 13.5, color: "rgba(200,210,245,0.88)", lineHeight: 1.65 }}>{obs.content}</div>
+                                <div style={{ fontSize: 10.5, color: "rgba(130,145,200,0.55)", marginTop: 5 }}>
+                                  首次记录 {createdDays === 0 ? "今天" : `${createdDays}天前`}
+                                  {daysAgo > 0 && ` · 上次确认 ${daysAgo}天前`}
+                                </div>
+                              </div>
+                              {obs.times_seen > 1 && (
+                                <span style={{ fontSize: 10, background: "rgba(140,120,255,0.2)", border: "1px solid rgba(160,140,255,0.4)", borderRadius: 10, padding: "2px 8px", color: "rgba(190,180,255,0.9)", whiteSpace: "nowrap", flexShrink: 0 }}>
+                                  ×{obs.times_seen} 已确认
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <p style={{ fontSize: 11, color: "rgba(120,135,190,0.5)", marginTop: 12, lineHeight: 1.6 }}>
+                      月复盘时，反复出现的观察会被升级进入核心档案；超过60天未再出现的会被自动清除。
                     </p>
                   </Glass>
 

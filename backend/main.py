@@ -11,7 +11,7 @@ import httpx
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-from models import SessionLocal, engine, init_db, Entry, Summary, ProfileState, User
+from models import SessionLocal, engine, init_db, Entry, Summary, ProfileState, User, RecentObservation
 
 load_dotenv()
 
@@ -120,6 +120,16 @@ class ChatRequest(BaseModel):
     system: str
     messages: List[ChatMessage]
     max_tokens: int = 800
+
+class ObservationCreate(BaseModel):
+    content: str
+
+class ObservationOut(BaseModel):
+    id: int
+    content: str
+    created_at: str
+    last_seen_at: str
+    times_seen: int
 
 # ---- API Endpoints ----
 
@@ -233,6 +243,66 @@ def create_summary(summary: SummaryBase, current_user: User = Depends(get_curren
     db.commit()
     db.refresh(db_summary)
     return summary
+
+@app.get("/api/observations", response_model=List[ObservationOut])
+def get_observations(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    obs = db.query(RecentObservation).filter(RecentObservation.user_id == current_user.id).order_by(RecentObservation.created_at.desc()).all()
+    return [{
+        "id": o.id,
+        "content": o.content,
+        "created_at": o.created_at.isoformat(),
+        "last_seen_at": o.last_seen_at.isoformat(),
+        "times_seen": o.times_seen,
+    } for o in obs]
+
+@app.post("/api/observations", response_model=ObservationOut)
+def create_observation(obs: ObservationCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_obs = RecentObservation(content=obs.content, user_id=current_user.id)
+    db.add(new_obs)
+    db.commit()
+    db.refresh(new_obs)
+    return {
+        "id": new_obs.id,
+        "content": new_obs.content,
+        "created_at": new_obs.created_at.isoformat(),
+        "last_seen_at": new_obs.last_seen_at.isoformat(),
+        "times_seen": new_obs.times_seen,
+    }
+
+@app.post("/api/observations/{obs_id}/seen", response_model=ObservationOut)
+def mark_observation_seen(obs_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Called during monthly review when an observation is found to have appeared again.
+    Increments times_seen and updates last_seen_at to now."""
+    obs = db.query(RecentObservation).filter(
+        RecentObservation.id == obs_id,
+        RecentObservation.user_id == current_user.id
+    ).first()
+    if not obs:
+        raise HTTPException(status_code=404, detail="Observation not found")
+    obs.times_seen += 1
+    obs.last_seen_at = datetime.utcnow()
+    db.commit()
+    db.refresh(obs)
+    return {
+        "id": obs.id,
+        "content": obs.content,
+        "created_at": obs.created_at.isoformat(),
+        "last_seen_at": obs.last_seen_at.isoformat(),
+        "times_seen": obs.times_seen,
+    }
+
+@app.delete("/api/observations/{obs_id}")
+def delete_observation(obs_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Remove an observation — called when it expires (>60 days, not seen again) or is promoted to core profile."""
+    obs = db.query(RecentObservation).filter(
+        RecentObservation.id == obs_id,
+        RecentObservation.user_id == current_user.id
+    ).first()
+    if not obs:
+        raise HTTPException(status_code=404, detail="Observation not found")
+    db.delete(obs)
+    db.commit()
+    return {"ok": True}
 
 @app.post("/api/chat")
 async def chat_proxy(req: ChatRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

@@ -33,6 +33,7 @@ class User(Base):
     entries = relationship("Entry", back_populates="owner")
     summaries = relationship("Summary", back_populates="owner")
     profile = relationship("ProfileState", back_populates="owner", uselist=False)
+    observations = relationship("RecentObservation", back_populates="owner", cascade="all, delete-orphan")
 
 class Entry(Base):
     __tablename__ = "entries"
@@ -71,6 +72,18 @@ class ProfileState(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="profile")
+
+class RecentObservation(Base):
+    __tablename__ = "recent_observations"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    user_id      = Column(Integer, ForeignKey("users.id"))
+    content      = Column(Text, nullable=False)          # the observation text
+    created_at   = Column(DateTime, default=datetime.utcnow)  # when first observed
+    last_seen_at = Column(DateTime, default=datetime.utcnow)  # updated each time it's seen again
+    times_seen   = Column(Integer, default=1)            # increments when monthly review finds it repeated
+
+    owner = relationship("User", back_populates="observations")
 
 def init_db():
     Base.metadata.create_all(bind=engine)
