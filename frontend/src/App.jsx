@@ -1037,6 +1037,17 @@ ${profile}
     .bubble-in{animation:bubbleIn .4s cubic-bezier(0.34,1.56,0.64,1) both;}
     .bubble-out{animation:bubbleOut .35s ease forwards;}
     .bubble-pulse{animation:gentlePulse 2.5s ease-in-out infinite;}
+    @keyframes progressFill {
+      0% { width: 0%; }
+      100% { width: 95%; }
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #8c78ff, #50a0ff, #ff78d2, #8c78ff);
+      background-size: 300% 100%;
+      animation: progressFill 20s cubic-bezier(0.1, 0, 0.4, 1) forwards, shimmer 3s linear infinite;
+      border-radius: 4px;
+    }
   `;
 
   const inputStyle = {
@@ -1660,8 +1671,23 @@ ${profile}
                   {/* Historical summaries for this type */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
                     {sumLoading && (
-                      <Glass style={{ padding: "22px", minHeight: 120 }}>
-                        <span className="generating">正在深入分析你的日记…</span>
+                      <Glass style={{ padding: "26px 22px", minHeight: 140, textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ width: "100%", maxWidth: 300, height: 6, background: "rgba(255,255,255,0.06)", borderRadius: 4, overflow: "hidden", marginBottom: 18, border: "1px solid rgba(140,160,255,0.15)" }}>
+                          <div className="progress-bar-fill" />
+                        </div>
+                        <div style={{ minHeight: 24 }}>
+                          <span className="generating" style={{ fontSize: 15, fontWeight: 500 }}>
+                            {(() => {
+                              const tips = lang === "en"
+                                ? ["Reading your journals...", "Identifying emotional patterns...", "Connecting the dots...", "Crafting deep insights...", "Almost there..."]
+                                : ["正在深度阅读日记...", "正在分析情绪曲线...", "正在连接微小的线索...", "正在提炼核心洞察...", "这就快好了..."];
+                              return tips[Math.floor((Date.now() / 4000) % tips.length)];
+                            })()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: "rgba(140,160,220,0.4)", marginTop: 12 }}>
+                          {lang === "en" ? "AI analysis typically takes 15-25 seconds" : "AI 深度分析通常需要 15-25 秒"}
+                        </div>
                       </Glass>
                     )}
 
