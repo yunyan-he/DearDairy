@@ -695,7 +695,9 @@ Rules:
     // Check thresholds
     const thresholds = { week: 5, month: 15, year: 180 };
     const minDays = thresholds[sumType];
-    if (filtered.length < minDays) {
+    const bypassRestrictions = false; // [DEBUG] Set to true to test generation without restrictions
+
+    if (filtered.length < minDays && !bypassRestrictions) {
       setSumText(`${periodLabel}复盘需要至少 ${minDays} 天的记录，当前只有 ${filtered.length} 天。`);
       setSumLoading(false);
       return;
@@ -703,7 +705,7 @@ Rules:
 
     // Check if already generated for this period
     const alreadyExists = summaryHistory.some(s => s.type === sumType && s.periodKey === periodKey);
-    if (alreadyExists) {
+    if (alreadyExists && !bypassRestrictions) {
       setSumText(`${periodLabel}的复盘已经生成过了，不能重复生成。`);
       setSumLoading(false);
       return;
@@ -803,9 +805,9 @@ ${analysisMode.includes("元分析") ? `
         content: result,
         analysisMode,
       };
-      const updatedHistory = [...summaryHistory, newSummary];
+      const updatedHistory = [newSummary, ...summaryHistory];
       setSummaryHistory(updatedHistory);
-      await fetch("/api/summaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSummary) });
+      await authedFetch("/api/summaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSummary) });
 
       // ── Post-summary side effects ──
       const versionIncrement = { week: 0.1, month: 0.3, year: 1.0 }[sumType];
@@ -1437,8 +1439,8 @@ ${profile}
                       <Glass style={{ padding: "20px", marginBottom: 20 }}>
                         <div style={labelStyle}>
                           <span>{isBackdate
-                              ? (lang === "en" ? `What happened on ${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "that day"}?` : `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么`)
-                              : (lang === "en" ? "What happened today?" : "今天发生了什么")}</span>
+                            ? (lang === "en" ? `What happened on ${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "that day"}?` : `${backdateOptions.find(o => o.daysAgo === backdateDay)?.label || "那天"}发生了什么`)
+                            : (lang === "en" ? "What happened today?" : "今天发生了什么")}</span>
                           {voiceOK && <VoiceBtn target="content" />}
                         </div>
                         <textarea value={content} onChange={e => setContent(e.target.value)} rows={7}
@@ -1476,7 +1478,7 @@ ${profile}
 
                       {justSaved && !generatingQ && (
                         <div className="anim-up" style={{ textAlign: "center", marginTop: 14, fontSize: 13, color: "rgba(100,200,150,0.8)" }}>
-                           {t.write.saved}{streak > 0 ? ` · ${t.write.streakDays(streak)} 🔥` : ""}
+                          {t.write.saved}{streak > 0 ? ` · ${t.write.streakDays(streak)} 🔥` : ""}
                         </div>
                       )}
                     </>
@@ -1492,7 +1494,7 @@ ${profile}
 
                       <Glass style={{ padding: "22px", marginBottom: 18, borderLeft: "3px solid rgba(140,120,255,0.6)" }}>
                         {generatingQ
-                           ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>{lang === "en" ? "Reading today's entry and crafting a personalized question…" : "正在读取你今天写的内容，为你生成专属问题…"}</p>
+                          ? <p className="generating" style={{ fontSize: 16, lineHeight: 1.8, fontStyle: "italic" }}>{lang === "en" ? "Reading today's entry and crafting a personalized question…" : "正在读取你今天写的内容，为你生成专属问题…"}</p>
                           : <p style={{ fontSize: 17, lineHeight: 1.8, color: "rgba(220,225,255,0.92)", fontStyle: "italic" }}>{aiQuestion}</p>
                         }
                       </Glass>
@@ -1655,15 +1657,53 @@ ${profile}
                     }}>{sumLoading ? "生成中…" : "生成复盘"}</button>
                   </div>
 
-                  <Glass style={{ padding: "22px", minHeight: 220, fontSize: 15, lineHeight: 1.95, color: sumText ? "rgba(210,215,255,0.88)" : "rgba(100,120,180,0.35)", fontStyle: sumText ? "normal" : "italic" }}>
-                    {sumLoading ? (
-                      <span className="generating">正在深入分析你的日记…</span>
-                    ) : sumText ? (
-                      <div dangerouslySetInnerHTML={{ __html: parseMarkdown(sumText) }} />
-                    ) : (
-                      "选择时间范围，点击「生成复盘」"
+                  {/* Historical summaries for this type */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
+                    {sumLoading && (
+                      <Glass style={{ padding: "22px", minHeight: 120 }}>
+                        <span className="generating">正在深入分析你的日记…</span>
+                      </Glass>
                     )}
-                  </Glass>
+
+                    {summaryHistory.filter(s => s.type === sumType).length === 0 && !sumLoading && (
+                      <Glass style={{ padding: "22px", minHeight: 120, fontSize: 15, color: "rgba(100,120,180,0.35)", fontStyle: "italic", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        "选择时间范围，点击「生成复盘」"
+                      </Glass>
+                    )}
+
+                    {summaryHistory
+                      .filter(s => s.type === sumType)
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((s, idx) => {
+                        const isExpanded = expanded === `sum-${s.type}-${s.periodKey}-${idx}`;
+                        return (
+                          <Glass key={`${s.type}-${s.periodKey}-${idx}`} className="hover-lift"
+                            onClick={() => setExpanded(isExpanded ? null : `sum-${s.type}-${s.periodKey}-${idx}`)}
+                            style={{
+                              cursor: "pointer",
+                              borderLeft: isExpanded ? "3px solid rgba(140,120,255,0.6)" : "1px solid rgba(140,160,255,0.22)"
+                            }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px" }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: "rgba(170,180,230,0.7)", letterSpacing: ".04em", marginBottom: 4 }}>
+                                  {fmtDate(s.date)} · {s.analysisMode || "复盘"}
+                                </div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(210,215,255,0.95)" }}>
+                                  {s.type === "week" ? "【周复盘】" : s.type === "month" ? "【月复盘】" : "【年复盘】"} {s.periodKey}
+                                </div>
+                              </div>
+                              <span style={{ color: "rgba(120,140,200,0.35)", fontSize: 11 }}>{isExpanded ? "▲" : "▼"}</span>
+                            </div>
+                            {isExpanded && (
+                              <div onClick={e => e.stopPropagation()} style={{ borderTop: "1px solid rgba(100,120,200,0.15)", padding: "20px 22px", fontSize: 15, lineHeight: 1.95 }}>
+                                <div dangerouslySetInnerHTML={{ __html: parseMarkdown(s.content) }} />
+                              </div>
+                            )}
+                          </Glass>
+                        );
+                      })
+                    }
+                  </div>
 
                   {/* 14-day heatmap */}
                   {entries.length > 0 && (
@@ -1826,7 +1866,7 @@ ${profile}
                         color: "rgba(160,175,220,0.7)", fontSize: 12, textDecoration: "none", transition: "all .2s"
                       }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                          <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                          <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
                         </svg>
                         {lang === "en" ? "View on GitHub" : "在 GitHub 上查看源码"}
                       </a>
