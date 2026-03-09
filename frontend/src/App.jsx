@@ -704,7 +704,7 @@ Rules:
     }
 
     // Check if already generated for this period
-    const alreadyExists = summaryHistory.some(s => s.type === sumType && s.periodKey === periodKey);
+    const alreadyExists = summaryHistory.some(s => s.type === sumType && (s.period_key === periodKey || s.periodKey === periodKey));
     if (alreadyExists && !bypassRestrictions) {
       setSumText(`${periodLabel}的复盘已经生成过了，不能重复生成。`);
       setSumLoading(false);
@@ -800,10 +800,10 @@ ${analysisMode.includes("元分析") ? `
       // Save this summary to history
       const newSummary = {
         type: sumType,
-        periodKey,
+        period_key: periodKey,
         date: now.toISOString(),
         content: result,
-        analysisMode,
+        analysis_mode: analysisMode,
       };
       const updatedHistory = [newSummary, ...summaryHistory];
       setSummaryHistory(updatedHistory);
@@ -1645,7 +1645,7 @@ ${profile}
                         periodKey = `${now.getFullYear() - 1}`;
                       }
 
-                      const alreadyGenerated = summaryHistory.some(s => s.type === t.id && s.periodKey === periodKey);
+                      const alreadyGenerated = summaryHistory.some(s => s.type === t.id && (s.period_key === periodKey || s.periodKey === periodKey));
                       const enabled = meetsThreshold && !alreadyGenerated;
 
                       return (
@@ -1702,10 +1702,12 @@ ${profile}
                       .filter(s => s.type === sumType)
                       .sort((a, b) => new Date(b.date) - new Date(a.date))
                       .map((s, idx) => {
-                        const isExpanded = expanded === `sum-${s.type}-${s.periodKey}-${idx}`;
+                        const pKey = s.period_key || s.periodKey;
+                        const aMode = s.analysis_mode || s.analysisMode;
+                        const isExpanded = expanded === `sum-${s.type}-${pKey}-${idx}`;
                         return (
-                          <Glass key={`${s.type}-${s.periodKey}-${idx}`} className="hover-lift"
-                            onClick={() => setExpanded(isExpanded ? null : `sum-${s.type}-${s.periodKey}-${idx}`)}
+                          <Glass key={`${s.type}-${pKey}-${idx}`} className="hover-lift"
+                            onClick={() => setExpanded(isExpanded ? null : `sum-${s.type}-${pKey}-${idx}`)}
                             style={{
                               cursor: "pointer",
                               borderLeft: isExpanded ? "3px solid rgba(140,120,255,0.6)" : "1px solid rgba(140,160,255,0.22)"
@@ -1713,10 +1715,10 @@ ${profile}
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px" }}>
                               <div>
                                 <div style={{ fontSize: 11, color: "rgba(170,180,230,0.7)", letterSpacing: ".04em", marginBottom: 4 }}>
-                                  {fmtDate(s.date)} · {s.analysisMode || "复盘"}
+                                  {fmtDate(s.date)} · {aMode || "复盘"}
                                 </div>
                                 <div style={{ fontSize: 14, fontWeight: 600, color: "rgba(210,215,255,0.95)" }}>
-                                  {s.type === "week" ? "【周复盘】" : s.type === "month" ? "【月复盘】" : "【年复盘】"} {s.periodKey}
+                                  {s.type === "week" ? "【周复盘】" : s.type === "month" ? "【月复盘】" : "【年复盘】"} {pKey}
                                 </div>
                               </div>
                               <span style={{ color: "rgba(120,140,200,0.35)", fontSize: 11 }}>{isExpanded ? "▲" : "▼"}</span>
