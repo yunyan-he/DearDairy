@@ -808,6 +808,7 @@ ${analysisMode.includes("元分析") ? `
       const updatedHistory = [newSummary, ...summaryHistory];
       setSummaryHistory(updatedHistory);
       await authedFetch("/api/summaries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newSummary) });
+      setSumLoading(false);
 
       // ── Post-summary side effects ──
       const versionIncrement = { week: 0.1, month: 0.3, year: 1.0 }[sumType];
@@ -937,8 +938,8 @@ ${profile}
       }
     } catch (err) {
       setSumText(`生成出错：${err.message || "请重试"}。`);
+      setSumLoading(false);
     }
-    setSumLoading(false);
   };
 
   // ── Helpers ──
