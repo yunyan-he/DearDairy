@@ -226,8 +226,13 @@ def get_profile(current_user: User = Depends(get_current_user), db: Session = De
 
 @app.post("/api/profile", response_model=ProfileBase)
 def update_profile(profile: ProfileBase, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    new_state = ProfileState(version=profile.version, content=profile.content, user_id=current_user.id)
-    db.add(new_state)
+    existing = db.query(ProfileState).filter(ProfileState.user_id == current_user.id).first()
+    if existing:
+        existing.version = profile.version
+        existing.content = profile.content
+    else:
+        new_state = ProfileState(version=profile.version, content=profile.content, user_id=current_user.id)
+        db.add(new_state)
     db.commit()
     return profile
 

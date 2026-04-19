@@ -94,3 +94,4 @@ yarn-error.log*
 # User custom ignored files
 DEPLOYMENT.md
 backend/test_auth.py
+backend/scratch/
