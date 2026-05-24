@@ -95,3 +95,5 @@ yarn-error.log*
 DEPLOYMENT.md
 backend/test_auth.py
 backend/scratch/
+
+docs/
