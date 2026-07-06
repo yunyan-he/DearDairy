@@ -303,9 +303,7 @@ content = f"""【用户性格档案 v1.3】
 
 版本日志：
 - [v1.0 → v1.3] 2026/4/28 月复盘：基于真实AI月复盘，补充“允许粗糙初稿”和“用搜索替代推进”的模式。
-
-月复盘摘录：
-{os.environ["SUMMARY_TEXT"][:900]}"""
+"""
 print(json.dumps({
     "version": "v1.3",
     "content": content,
