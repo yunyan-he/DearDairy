@@ -160,6 +160,36 @@ make frontend
 
 ---
 
+## 🧪 虚拟用户种子数据
+
+可以用 `curl` 脚本创建一个 3 个月虚拟用户，用于调试日记、复盘、Persona 版本历史和 RAG 记忆写入。
+
+```bash
+# 先启动后端
+make backend
+
+# 另开一个终端，写入虚拟用户数据（默认不调用 AI，不消耗 DeepSeek 额度）
+make seed-virtual-user
+
+# 如需真实测试 /api/chat + RAG 注入 + DeepSeek 调用
+make seed-virtual-user-ai
+```
+
+默认账号：
+
+```text
+username=virtual_zhixia
+password=DearDairy-virtual-123
+```
+
+可通过环境变量覆盖：
+
+```bash
+API_BASE=http://localhost:8001 USERNAME=test_user PASSWORD=test_pass bash scripts/seed_virtual_user.sh
+```
+
+---
+
 ## 📁 项目结构
 
 ```
@@ -173,6 +203,8 @@ DearDairy/
 │   └── src/
 │       ├── App.jsx      # 主 React 应用
 │       └── i18n.js      # 中英文翻译
+├── scripts/
+│   └── seed_virtual_user.sh
 └── Makefile             # 快速启动命令
 ```
 
@@ -196,9 +228,12 @@ SQLAlchemy 在启动时自动建表：
 
 - **users** — `id`, `username`, `hashed_password`, `api_key`, `usage_count`
 - **entries** — `id`, `user_id`, `date`, `content`, `mood`, `question`, `answer`
-- **summaries** — `id`, `user_id`, `type`, `content`, `covered_dates`, `created_at`
-- **profile_states** — `id`, `user_id`, `profile`, `version`, `summary_history`
+- **summaries** — `id`, `user_id`, `type`, `period_key`, `date`, `content`, `analysis_mode`
+- **profile_state** — 当前 Persona 状态
+- **profile_snapshots** — Persona 每次更新的版本快照、来源和更新说明
 - **recent_observations** — `id`, `user_id`, `content`, `created_at`, `last_seen_at`, `times_seen`
+- **observation_snapshots** — 近期观察的创建、确认、删除事件历史
+- **memory_items** — 日记、复盘、观察、Persona 写入的轻量 RAG 记忆
 
 ---
 
