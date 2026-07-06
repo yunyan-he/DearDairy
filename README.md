@@ -99,7 +99,7 @@ This is the [Ship of Theseus](https://en.wikipedia.org/wiki/Ship_of_Theseus) pro
 | Frontend | React (Vite), Vanilla CSS, Canvas aurora background |
 | Backend | FastAPI (Python), SQLAlchemy |
 | Database | Supabase (PostgreSQL) |
-| AI | OpenRouter (model configurable via env) |
+| AI | DeepSeek-compatible OpenAI API (model configurable via env) |
 | Auth | JWT (python-jose + passlib) |
 
 ---
@@ -110,7 +110,7 @@ This is the [Ship of Theseus](https://en.wikipedia.org/wiki/Ship_of_Theseus) pro
 - Node.js ≥ 18
 - Python ≥ 3.11
 - A [Supabase](https://supabase.com) project (free tier works)
-- An [OpenRouter](https://openrouter.ai) API key
+- A [DeepSeek](https://platform.deepseek.com) API key
 
 ### 1. Clone the repo
 ```bash
@@ -128,9 +128,9 @@ cp .env.example .env   # then fill in your credentials
 ```
 
 ```env
-OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=anthropic/claude-3.5-sonnet    # or any OpenRouter model
+AI_API_KEY=sk-...
+AI_BASE_URL=https://api.deepseek.com/v1
+AI_MODEL=deepseek-chat
 SUPABASE_URL=postgresql://...                    # your Supabase connection string
 SECRET_KEY=your_random_secret_key
 ```
@@ -177,9 +177,9 @@ DearDairy/
 
 | Variable | Description |
 |---|---|
-| `OPENROUTER_API_KEY` | Your OpenRouter API key |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-| `OPENROUTER_MODEL` | Any model slug from OpenRouter |
+| `AI_API_KEY` | Your DeepSeek or OpenAI-compatible API key |
+| `AI_BASE_URL` | Defaults to `https://api.deepseek.com/v1` |
+| `AI_MODEL` | Defaults to `deepseek-chat` |
 | `SUPABASE_URL` | PostgreSQL connection string (Supabase) |
 | `SECRET_KEY` | Random string for JWT signing |
 

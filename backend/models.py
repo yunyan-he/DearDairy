@@ -26,7 +26,9 @@ class User(Base):
     password_hash = Column(String)
     
     # Custom API settings
-    api_key = Column(String, nullable=True) # User's own OpenRouter API key
+    api_key = Column(String, nullable=True) # User's own DeepSeek-compatible API key
+    api_base_url = Column(String, nullable=True)
+    api_model = Column(String, nullable=True)
     usage_count = Column(Integer, default=0) # Tracks free usages (up to 10)
     is_unlimited = Column(Boolean, default=False) # Skip quota if True
     
@@ -34,7 +36,9 @@ class User(Base):
     entries = relationship("Entry", back_populates="owner")
     summaries = relationship("Summary", back_populates="owner")
     profile = relationship("ProfileState", back_populates="owner", uselist=False)
+    profile_snapshots = relationship("ProfileSnapshot", back_populates="owner", cascade="all, delete-orphan")
     observations = relationship("RecentObservation", back_populates="owner", cascade="all, delete-orphan")
+    memory_items = relationship("MemoryItem", back_populates="owner", cascade="all, delete-orphan")
 
 class Entry(Base):
     __tablename__ = "entries"
@@ -74,6 +78,19 @@ class ProfileState(Base):
 
     owner = relationship("User", back_populates="profile")
 
+class ProfileSnapshot(Base):
+    __tablename__ = "profile_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    version = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    change_note = Column(Text, nullable=True)
+    source = Column(String, nullable=True) # onboarding, week_review, month_review, year_review, manual
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="profile_snapshots")
+
 class RecentObservation(Base):
     __tablename__ = "recent_observations"
 
@@ -85,6 +102,32 @@ class RecentObservation(Base):
     times_seen   = Column(Integer, default=1)            # increments when monthly review finds it repeated
 
     owner = relationship("User", back_populates="observations")
+
+class ObservationSnapshot(Base):
+    __tablename__ = "observation_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    observation_id = Column(Integer, nullable=True)
+    content = Column(Text, nullable=False)
+    event = Column(String, nullable=False) # created, seen_again, promoted, expired, deleted
+    summary_period_key = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class MemoryItem(Base):
+    __tablename__ = "memory_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    source_type = Column(String, nullable=False) # entry, summary, observation, profile
+    source_id = Column(String, nullable=True)
+    date = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    content = Column(Text, nullable=False)
+    importance = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="memory_items")
 
 def init_db():
     Base.metadata.create_all(bind=engine)

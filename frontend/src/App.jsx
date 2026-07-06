@@ -327,6 +327,7 @@ export default function App() {
   const [streak, setStreak] = useState(0);
   const [profile, setProfile] = useState(() => getDefaultProfile(getLang() || "zh"));
   const [profileVersion, setProfileVersion] = useState("v1.0");
+  const [profileHistory, setProfileHistory] = useState([]);
   const [summaryHistory, setSummaryHistory] = useState([]); // { type, date, content, coveredDates }
 
   // Onboarding vs Main App
@@ -446,6 +447,7 @@ export default function App() {
     const loadSummaries = async () => { try { const r = await authedFetch("/api/summaries"); if (r.ok) return r.json(); } catch { } return []; };
     const loadMe = async () => { try { const r = await authedFetch("/api/me"); if (r.ok) return r.json(); } catch { } return null; };
     const loadObservations = async () => { try { const r = await authedFetch("/api/observations"); if (r.ok) return r.json(); } catch { } return []; };
+    const loadProfileHistory = async () => { try { const r = await authedFetch("/api/profile/history"); if (r.ok) return r.json(); } catch { } return []; };
 
     Promise.all([
       loadEntries(),
@@ -454,7 +456,8 @@ export default function App() {
       loadSummaries(),
       loadMe(),
       loadObservations(),
-    ]).then(([e, profileState, lastDismissed, summaries, me, obs]) => {
+      loadProfileHistory(),
+    ]).then(([e, profileState, lastDismissed, summaries, me, obs, profileSnapshots]) => {
       setEntries(e);
       setStreak(calcStreak(e));
       if (profileState?.content) {
@@ -470,6 +473,7 @@ export default function App() {
         setIsUnlimited(me.is_unlimited || false);
       }
       if (obs) setObservations(obs);
+      if (profileSnapshots) setProfileHistory(profileSnapshots);
       setLoading(false);
 
       // Determine if a reminder bubble should show
@@ -849,7 +853,9 @@ ${profile}
           if (newProfile && newProfile.length > 50) {
             setProfile(newProfile);
             setProfileVersion(`v${targetVer}`);
-            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+            const savedProfile = { version: `v${targetVer}`, content: newProfile, source: "week_review", change_note: `${now.toLocaleDateString("zh-CN")} 周复盘微调长期档案` };
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+            setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: now.toISOString() }, ...prev]);
           }
         } catch { }
       }
@@ -916,7 +922,9 @@ ${promotedContents.length ? promotedContents.map(c => `- ${c}`).join("\n") : "�
           if (newProfile && newProfile.length > 50) {
             setProfile(newProfile);
             setProfileVersion(`v${targetVer}`);
-            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+            const savedProfile = { version: `v${targetVer}`, content: newProfile, source: "month_review", change_note: `${now.toLocaleDateString("zh-CN")} 月复盘整合稳定观察` };
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+            setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: now.toISOString() }, ...prev]);
           }
         } catch { }
       }
@@ -932,7 +940,9 @@ ${profile}
           if (newProfile && newProfile.length > 50) {
             setProfile(newProfile);
             setProfileVersion(`v${targetVer}`);
-            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: `v${targetVer}`, content: newProfile }) });
+            const savedProfile = { version: `v${targetVer}`, content: newProfile, source: "year_review", change_note: `${now.toLocaleDateString("zh-CN")} 年复盘重构长期档案` };
+            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+            setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: now.toISOString() }, ...prev]);
           }
         } catch { }
       }
@@ -1139,7 +1149,9 @@ ${profile}
       const generatedProfile = await callAI(sys, `用户回答：\n${answers}`, 800);
       setProfile(generatedProfile);
       setProfileVersion("v1.0");
-      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: generatedProfile }) });
+      const savedProfile = { version: "v1.0", content: generatedProfile, source: "onboarding", change_note: `${new Date().toLocaleDateString("zh-CN")} 初始档案由用户问卷生成` };
+      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+      setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: new Date().toISOString() }, ...prev]);
       setNeedsOnboarding(false);
       setView("write");
       setShowProfileNudge(true);
@@ -1147,7 +1159,9 @@ ${profile}
       const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案生成失败，AI将通过后续日记输入逐渐了解\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 初始档案（问卷生成失败）`;
       setProfile(fb);
       setProfileVersion("v1.0");
-      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
+      const savedProfile = { version: "v1.0", content: fb, source: "onboarding_fallback", change_note: `${new Date().toLocaleDateString("zh-CN")} 初始档案生成失败，使用兜底档案` };
+      await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+      setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: new Date().toISOString() }, ...prev]);
       setNeedsOnboarding(false);
       setView("write");
       setShowProfileNudge(true);
@@ -1158,7 +1172,9 @@ ${profile}
     const fb = `【用户性格档案 v1.0】\n\n核心特征：\n- 档案从零开始，AI将通过阅读日记逐渐了解用户\n\n版本日志：\n- [v1.0] ${new Date().toLocaleDateString("zh-CN")} 用户选择跳过问卷，档案待AI学习积累`;
     setProfile(fb);
     setProfileVersion("v1.0");
-    await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: "v1.0", content: fb }) });
+    const savedProfile = { version: "v1.0", content: fb, source: "onboarding_skipped", change_note: `${new Date().toLocaleDateString("zh-CN")} 用户跳过问卷，建立空白初始档案` };
+    await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
+    setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: new Date().toISOString() }, ...prev]);
     setNeedsOnboarding(false);
     setView("write");
   };
@@ -1779,6 +1795,21 @@ ${profile}
                     <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
                       这是 AI 目前对你的了解。每次生成复盘后，它会根据你最新的日记内容悄悄更新这份档案，记录你真实的成长轨迹。你可以在这里看到它对你的理解在随时间发生怎样的变化。
                     </p>
+                    {profileHistory.length > 0 && (
+                      <div style={{ marginTop: 16, borderTop: "1px solid rgba(120,140,220,0.18)", paddingTop: 14 }}>
+                        <div style={{ fontSize: 11, color: "rgba(155,165,220,0.66)", letterSpacing: ".12em", marginBottom: 10 }}>版本记录</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 150, overflowY: "auto" }}>
+                          {profileHistory.slice(0, 8).map(item => (
+                            <div key={`${item.id}-${item.version}`} style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: 10, alignItems: "start", fontSize: 12 }}>
+                              <span style={{ color: "rgba(190,200,255,0.86)" }}>{item.version}</span>
+                              <span style={{ color: "rgba(145,158,215,0.72)", lineHeight: 1.55 }}>
+                                {new Date(item.created_at).toLocaleDateString("zh-CN")} · {item.change_note || item.source || "档案更新"}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </Glass>
 
                   {/* Recent Observations block */}
@@ -1863,7 +1894,7 @@ ${profile}
                         type="password"
                         value={apiKeyInput}
                         onChange={(e) => setApiKeyInput(e.target.value)}
-                        placeholder="sk-or-v1-xxxxxxxxxx..."
+                        placeholder="sk-xxxxxxxxxx..."
                         style={{
                           flex: 1, padding: "10px 14px", borderRadius: 8,
                           background: "rgba(10,14,35,0.6)",
