@@ -337,6 +337,9 @@ export default function App() {
 
   // Recent observations (Plan B structured storage)
   const [observations, setObservations] = useState([]);
+  const [editingObservation, setEditingObservation] = useState(null);
+  const [observationDraft, setObservationDraft] = useState("");
+  const [observationSaving, setObservationSaving] = useState(null);
 
   // Reminder bubble
   const [reminder, setReminder] = useState(null); // { type: 'week'|'month'|'year', label: string }
@@ -631,6 +634,26 @@ Rules:
   };
 
   // ── Summary + profile update (hierarchical) ──
+  const reviewObservation = async (obs, status, content = null) => {
+    setObservationSaving(obs.id);
+    try {
+      const r = await authedFetch(`/api/observations/${obs.id}/review`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, content }),
+      });
+      if (!r.ok) throw new Error("无法保存你的判断");
+      const updated = await r.json();
+      setObservations(prev => prev.map(item => item.id === obs.id ? updated : item));
+      setEditingObservation(null);
+      setObservationDraft("");
+    } catch (err) {
+      alert(err.message || "无法保存你的判断");
+    } finally {
+      setObservationSaving(null);
+    }
+  };
+
   const genSummary = async () => {
     if (!entries.length) { setSumText("还没有日记记录，先去写几篇吧。"); return; }
     setSumLoading(true); setSumText("");
@@ -817,7 +840,7 @@ ${analysisMode.includes("元分析") ? `
       setSumLoading(false);
 
       // ── Post-summary side effects ──
-      const versionIncrement = { week: 0.1, month: 0.3, year: 1.0 }[sumType];
+      const versionIncrement = { month: 0.3, year: 1.0 }[sumType] || 0;
       const currentVer = parseFloat(profileVersion.replace(/v/, "")) || 1.0;
       const targetVer = (currentVer + versionIncrement).toFixed(1);
 
@@ -840,45 +863,25 @@ ${analysisMode.includes("元分析") ? `
           if (newObs.length) setObservations(prev => [...newObs, ...prev]);
         } catch { }
 
-        // Weekly profile update: only touch core sections, not 近期观察
-        try {
-          const updateSys = `你正在维护用户的长期性格档案。当前档案：
-${profile}
-
-这是本周复盘。只对档案的四个核心区块（核心特征、主要困境、成长动力与障碍、与用户互动原则）做「微小调整」。
-规则：
-1. 只能在现有条目后追加补充说明（用 → 标注），不能删除任何条目
-2. 「近期观察」区块不要动，不要在档案里写近期观察
-3. 在末尾追加版本日志：[v${profileVersion} → v${targetVer}] ${now.toLocaleDateString("zh-CN")} 周复盘：一句话说明改了什么
-4. 不要粘贴本周复盘原文、摘录或Markdown标题；只把稳定变化提炼进正文
-5. 直接输出完整档案文本`;
-          const newProfile = await callAI(updateSys, `本次周复盘摘要：\n${result.slice(0, 500)}`, 700);
-          if (newProfile && newProfile.length > 50) {
-            setProfile(newProfile);
-            setProfileVersion(`v${targetVer}`);
-            const savedProfile = { version: `v${targetVer}`, content: newProfile, source: "week_review", change_note: `${now.toLocaleDateString("zh-CN")} 周复盘微调长期档案` };
-            await authedFetch("/api/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(savedProfile) });
-            setProfileHistory(prev => [{ ...savedProfile, id: Date.now(), created_at: now.toISOString() }, ...prev]);
-          }
-        } catch { }
       }
 
       // Monthly: promote stable observations + expire old ones
       if (sumType === "month") {
         try {
-          const obsList = observations.map(o => {
+          const confirmedObservations = observations.filter(o => o.user_status === "confirmed");
+          const obsList = confirmedObservations.map(o => {
             const daysSince = Math.floor((Date.now() - new Date(o.last_seen_at).getTime()) / 86400000);
             return `ID:${o.id} | 已观察${o.times_seen}次 | 距上次${daysSince}天 | ${o.content}`;
           }).join("\n");
 
           const monthObsSys = `你正在进行月度性格档案审核。以下是用户的「近期观察」列表和本月复盘内容。
 
-近期观察列表：
+用户已确认的近期观察列表：
 ${obsList || "（暂无观察记录）"}
 
 请严格以JSON格式输出，不要输出任何其他内容：
 {
-  "promote": [id列表，这些观察已稳定重复，应升级为核心档案条目],
+  "promote": [id列表，只能选择用户已确认且已稳定重复、应升级为核心档案的观察],
   "seen_again": [id列表，这些观察在本月复盘内容中再次出现，需更新last_seen_at],
   "expire": [id列表，这些观察超过60天未再出现，应删除]
 }`;
@@ -900,7 +903,7 @@ ${obsList || "（暂无观察记录）"}
           }
 
           // Collect promoted content for profile update
-          const promotedContents = (decision.promote || []).map(id => observations.find(o => o.id === id)?.content).filter(Boolean);
+          const promotedContents = (decision.promote || []).map(id => confirmedObservations.find(o => o.id === id)?.content).filter(Boolean);
 
           // Delete expired and promoted from DB
           const toDelete = [...(decision.expire || []), ...(decision.promote || [])];
@@ -1789,7 +1792,7 @@ ${profile}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                       <div>
                         <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em", marginBottom: 4 }}>个人性格档案</h3>
-                        <p style={{ fontSize: 11, color: "rgba(155,165,220,0.6)" }}>当前版本 {profileVersion} · AI 复盘后自动更新</p>
+                        <p style={{ fontSize: 11, color: "rgba(155,165,220,0.6)" }}>当前版本 {profileVersion} · 仅在月度与年度复盘中更新</p>
                       </div>
                       <div style={{ fontSize: 18, opacity: .6 }}>✦</div>
                     </div>
@@ -1797,7 +1800,7 @@ ${profile}
                       {profile}
                     </div>
                     <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
-                      这是 AI 目前对你的了解。每次生成复盘后，它会根据你最新的日记内容悄悄更新这份档案，记录你真实的成长轨迹。你可以在这里看到它对你的理解在随时间发生怎样的变化。
+                      这是系统目前对你的长期理解。AI 每周提出的观察必须先经过你的确认；只有确认过并持续出现的模式，才可能在月度复盘中进入这份档案。
                     </p>
                     {profileHistory.length > 0 && (
                       <div style={{ marginTop: 16, borderTop: "1px solid rgba(120,140,220,0.18)", paddingTop: 14 }}>
@@ -1820,7 +1823,7 @@ ${profile}
                   <Glass style={{ padding: "20px", marginBottom: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                       <h3 style={{ fontSize: 14, fontWeight: 600, color: "rgba(195,205,255,0.9)", letterSpacing: ".08em" }}>近期观察</h3>
-                      <span style={{ fontSize: 11, color: "rgba(140,155,210,0.5)" }}>每周复盘后追加 · 月复盘审核</span>
+                      <span style={{ fontSize: 11, color: "rgba(140,155,210,0.5)" }}>AI 每周提出 · 由你判断 · 月复盘整合</span>
                     </div>
                     {observations.length === 0 ? (
                       <p style={{ fontSize: 13, color: "rgba(120,135,190,0.5)", fontStyle: "italic" }}>完成第一次周复盘后，AI 会开始积累近期观察。</p>
@@ -1832,13 +1835,48 @@ ${profile}
                           return (
                             <div key={obs.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: "rgba(80,100,160,0.1)", borderRadius: 8, border: "1px solid rgba(100,120,200,0.2)" }}>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: 13.5, color: "rgba(200,210,245,0.88)", lineHeight: 1.65 }}>{obs.content}</div>
+                                {editingObservation === obs.id ? (
+                                  <textarea
+                                    value={observationDraft}
+                                    onChange={e => setObservationDraft(e.target.value)}
+                                    rows={3}
+                                    style={{ width: "100%", resize: "vertical", boxSizing: "border-box", borderRadius: 6, padding: "8px 10px", background: "rgba(5,8,28,.65)", border: "1px solid rgba(150,160,240,.35)", color: "rgba(220,225,255,.92)", font: "inherit", lineHeight: 1.55 }}
+                                  />
+                                ) : (
+                                  <div style={{ fontSize: 13.5, color: obs.user_status === "rejected" ? "rgba(150,158,190,0.58)" : "rgba(200,210,245,0.88)", lineHeight: 1.65, textDecoration: obs.user_status === "rejected" ? "line-through" : "none" }}>{obs.content}</div>
+                                )}
                                 <div style={{ fontSize: 10.5, color: "rgba(130,145,200,0.55)", marginTop: 5 }}>
                                   首次记录 {createdDays === 0 ? "今天" : `${createdDays}天前`}
                                   {daysAgo > 0 && ` · 上次确认 ${daysAgo}天前`}
                                 </div>
+                                {editingObservation === obs.id ? (
+                                  <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
+                                    <button disabled={observationSaving === obs.id || !observationDraft.trim()} onClick={() => reviewObservation(obs, "confirmed", observationDraft)} style={{ border: 0, borderRadius: 6, padding: "5px 10px", cursor: "pointer", background: "rgba(120,110,230,.72)", color: "white", fontSize: 11 }}>保存并确认</button>
+                                    <button onClick={() => setEditingObservation(null)} style={{ border: "1px solid rgba(130,140,190,.3)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", background: "transparent", color: "rgba(180,190,225,.75)", fontSize: 11 }}>取消</button>
+                                  </div>
+                                ) : obs.user_status === "pending" ? (
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginTop: 9 }}>
+                                    <button disabled={observationSaving === obs.id} onClick={() => reviewObservation(obs, "confirmed", obs.content)} style={{ border: 0, borderRadius: 6, padding: "5px 10px", cursor: "pointer", background: "rgba(92,160,140,.65)", color: "white", fontSize: 11 }}>这符合我</button>
+                                    <button onClick={() => { setEditingObservation(obs.id); setObservationDraft(obs.content); }} style={{ border: "1px solid rgba(145,145,220,.35)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", background: "transparent", color: "rgba(195,200,240,.85)", fontSize: 11 }}>修改后确认</button>
+                                    <button disabled={observationSaving === obs.id} onClick={() => reviewObservation(obs, "rejected")} style={{ border: "1px solid rgba(190,115,135,.3)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", background: "transparent", color: "rgba(220,155,170,.8)", fontSize: 11 }}>这不符合我</button>
+                                  </div>
+                                ) : (
+                                  <div style={{ marginTop: 7 }}>
+                                    <div style={{ fontSize: 10.5, color: obs.user_status === "confirmed" ? "rgba(120,205,175,.78)" : "rgba(205,135,150,.7)" }}>
+                                      {obs.user_status === "confirmed" ? "✓ 已由你确认，可参与月度档案更新" : "已否认，不会进入个人档案"}
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                                      <button onClick={() => { setEditingObservation(obs.id); setObservationDraft(obs.content); }} style={{ border: 0, padding: 0, cursor: "pointer", background: "transparent", color: "rgba(160,175,225,.72)", fontSize: 10.5 }}>
+                                        {obs.user_status === "confirmed" ? "修改我的判断" : "重新判断"}
+                                      </button>
+                                      {obs.user_status === "confirmed" && (
+                                        <button disabled={observationSaving === obs.id} onClick={() => reviewObservation(obs, "rejected")} style={{ border: 0, padding: 0, cursor: "pointer", background: "transparent", color: "rgba(210,145,160,.68)", fontSize: 10.5 }}>改为不符合我</button>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              {obs.times_seen > 1 && (
+                              {obs.user_status === "confirmed" && obs.times_seen > 1 && (
                                 <span style={{ fontSize: 10, background: "rgba(140,120,255,0.2)", border: "1px solid rgba(160,140,255,0.4)", borderRadius: 10, padding: "2px 8px", color: "rgba(190,180,255,0.9)", whiteSpace: "nowrap", flexShrink: 0 }}>
                                   ×{obs.times_seen} 已确认
                                 </span>
@@ -1849,7 +1887,7 @@ ${profile}
                       </div>
                     )}
                     <p style={{ fontSize: 11, color: "rgba(120,135,190,0.5)", marginTop: 12, lineHeight: 1.6 }}>
-                      月复盘时，反复出现的观察会被升级进入核心档案；超过60天未再出现的会被自动清除。
+                      只有你确认过的观察，才会参与月复盘并有机会进入核心档案；你否认的判断不会被当成关于你的事实。
                     </p>
                   </Glass>
 

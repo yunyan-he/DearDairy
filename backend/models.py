@@ -102,6 +102,21 @@ class RecentObservation(Base):
     times_seen   = Column(Integer, default=1)            # increments when monthly review finds it repeated
 
     owner = relationship("User", back_populates="observations")
+    review = relationship("ObservationReview", back_populates="observation", uselist=False, cascade="all, delete-orphan")
+
+class ObservationReview(Base):
+    """The user's judgment of an AI-generated observation candidate."""
+    __tablename__ = "observation_reviews"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    observation_id = Column(Integer, ForeignKey("recent_observations.id"), unique=True, index=True)
+    status = Column(String, nullable=False)  # confirmed, rejected
+    original_content = Column(Text, nullable=False)
+    reviewed_content = Column(Text, nullable=True)
+    reviewed_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    observation = relationship("RecentObservation", back_populates="review")
 
 class ObservationSnapshot(Base):
     __tablename__ = "observation_snapshots"
@@ -110,7 +125,7 @@ class ObservationSnapshot(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     observation_id = Column(Integer, nullable=True)
     content = Column(Text, nullable=False)
-    event = Column(String, nullable=False) # created, seen_again, promoted, expired, deleted
+    event = Column(String, nullable=False) # created, confirmed, edited, rejected, seen_again, promoted, expired, deleted
     summary_period_key = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 

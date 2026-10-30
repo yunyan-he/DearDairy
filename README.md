@@ -21,9 +21,9 @@ First Launch → Onboarding Quiz → Initial Persona Generated
      ↓
 Daily Journaling (with AI reflection + emotional check-in)
      ↓
-Weekly Review → Recent behavior patterns extracted → Persona updated
+Weekly Review → AI proposes observation candidates → User confirms, edits, or rejects
      ↓
-Monthly Review → Stable patterns promoted into Core Persona → Outdated patterns retired
+Monthly Review → Confirmed stable patterns promoted into Core Persona → Outdated patterns retired
      ↓
 Yearly Review → Full persona reconstruction → See how far you've come
 ```
@@ -44,11 +44,11 @@ After each entry, the AI generates a **tailored reflection question** based on y
 
 ### 3. Weekly & Monthly Reviews
 
-- **Weekly review** (≥5 entries): Deep analysis of your week. Extracts new behavioral observations and adds them to your Recent Observations pool.
-- **Monthly review** (≥15 entries): Promotes stable, recurring observations into your **Core Persona**. Retires patterns that no longer apply.
+- **Weekly review** (≥5 entries): Deep analysis of your week. AI proposes behavioral observations, but they remain hypotheses until you confirm, edit, or reject them.
+- **Monthly review** (≥15 entries): Only user-confirmed recurring observations can be promoted into your **Core Persona**. Rejected observations are never treated as facts about you.
 - **Yearly review** (≥180 entries): Full persona reconstruction. A chance to see yourself clearly across a full year.
 
-Each review bumps your profile version (`weekly +0.1`, `monthly +0.3`, `yearly +1.0`) — a quiet way of marking how much has changed.
+Monthly and yearly reviews create new profile versions (`monthly +0.3`, `yearly +1.0`). Weekly reviews collect evidence without directly rewriting who the system says you are.
 
 ---
 
@@ -60,8 +60,8 @@ Each review bumps your profile version (`weekly +0.1`, `monthly +0.3`, `yearly +
 | 🧠 AI Reflection | Personalized follow-up question after each entry |
 | 🛡 Emotional Check-in | AI detects distress signals, guides toward reflection |
 | 👤 Living Persona | Evolving personality profile with versioned history |
-| 🔄 Weekly Review | Behavioral pattern extraction |
-| 📅 Monthly Review | Core persona updates, pattern retirement |
+| 🔄 Weekly Review | AI observation candidates with user confirmation, editing, or rejection |
+| 📅 Monthly Review | Confirmed-pattern promotion and outdated-pattern retirement |
 | 🌍 Bilingual | Full EN / ZH support — UI, AI prompts, voice input |
 | 🎙 Voice Input | Browser-native Web Speech API, no cost |
 
@@ -194,6 +194,9 @@ Tables are auto-created on startup via SQLAlchemy:
 - **summaries** — `id`, `user_id`, `type`, `content`, `covered_dates`, `created_at`
 - **profile_states** — `id`, `user_id`, `profile`, `version`, `summary_history`
 - **recent_observations** — `id`, `user_id`, `content`, `created_at`, `last_seen_at`, `times_seen`
+- **observation_reviews** — the user's confirmation, correction, or rejection of each AI observation candidate
+
+See [TODO.md](./TODO.md) for the product-validation plan and current diary/AI-journaling competitive research checklist.
 
 ---
 

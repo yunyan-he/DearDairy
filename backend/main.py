@@ -23,6 +23,7 @@ from models import (
     ProfileSnapshot,
     User,
     RecentObservation,
+    ObservationReview,
     ObservationSnapshot,
     MemoryItem,
 )
@@ -165,6 +166,12 @@ class ObservationOut(BaseModel):
     created_at: str
     last_seen_at: str
     times_seen: int
+    user_status: str
+    reviewed_at: Optional[str] = None
+
+class ObservationReviewIn(BaseModel):
+    status: str
+    content: Optional[str] = None
 
 class MemoryOut(BaseModel):
     id: int
@@ -406,6 +413,8 @@ def get_observations(current_user: User = Depends(get_current_user), db: Session
         "created_at": o.created_at.isoformat(),
         "last_seen_at": o.last_seen_at.isoformat(),
         "times_seen": o.times_seen,
+        "user_status": o.review.status if o.review else "pending",
+        "reviewed_at": o.review.reviewed_at.isoformat() if o.review and o.review.reviewed_at else None,
     } for o in obs]
 
 @app.get("/api/memories", response_model=List[MemoryOut])
@@ -437,6 +446,79 @@ def create_observation(obs: ObservationCreate, current_user: User = Depends(get_
         "created_at": new_obs.created_at.isoformat(),
         "last_seen_at": new_obs.last_seen_at.isoformat(),
         "times_seen": new_obs.times_seen,
+        "user_status": "pending",
+        "reviewed_at": None,
+    }
+
+@app.put("/api/observations/{obs_id}/review", response_model=ObservationOut)
+def review_observation(
+    obs_id: int,
+    payload: ObservationReviewIn,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Let the user confirm, edit-and-confirm, or reject an AI candidate."""
+    if payload.status not in {"confirmed", "rejected"}:
+        raise HTTPException(status_code=400, detail="status must be confirmed or rejected")
+
+    obs = db.query(RecentObservation).filter(
+        RecentObservation.id == obs_id,
+        RecentObservation.user_id == current_user.id,
+    ).first()
+    if not obs:
+        raise HTTPException(status_code=404, detail="Observation not found")
+
+    reviewed_content = payload.content.strip() if payload.content else obs.content
+    if payload.status == "confirmed" and not reviewed_content:
+        raise HTTPException(status_code=400, detail="Confirmed observation cannot be empty")
+
+    original_content = obs.review.original_content if obs.review else obs.content
+    was_edited = payload.status == "confirmed" and reviewed_content != obs.content
+    if payload.status == "confirmed":
+        obs.content = reviewed_content
+
+    review = obs.review
+    if review:
+        review.status = payload.status
+        review.reviewed_content = reviewed_content if payload.status == "confirmed" else None
+        review.reviewed_at = datetime.utcnow()
+    else:
+        review = ObservationReview(
+            user_id=current_user.id,
+            observation_id=obs.id,
+            status=payload.status,
+            original_content=original_content,
+            reviewed_content=reviewed_content if payload.status == "confirmed" else None,
+        )
+        db.add(review)
+
+    event = "rejected" if payload.status == "rejected" else ("edited" if was_edited else "confirmed")
+    db.add(ObservationSnapshot(
+        user_id=current_user.id,
+        observation_id=obs.id,
+        content=reviewed_content if payload.status == "confirmed" else obs.content,
+        event=event,
+    ))
+    if payload.status == "confirmed":
+        add_memory(
+            db,
+            current_user.id,
+            "observation",
+            reviewed_content,
+            source_id=str(obs.id),
+            title="用户确认的近期观察",
+            importance=4,
+        )
+    db.commit()
+    db.refresh(obs)
+    return {
+        "id": obs.id,
+        "content": obs.content,
+        "created_at": obs.created_at.isoformat(),
+        "last_seen_at": obs.last_seen_at.isoformat(),
+        "times_seen": obs.times_seen,
+        "user_status": review.status,
+        "reviewed_at": review.reviewed_at.isoformat(),
     }
 
 @app.post("/api/observations/{obs_id}/seen", response_model=ObservationOut)
@@ -461,6 +543,8 @@ def mark_observation_seen(obs_id: int, current_user: User = Depends(get_current_
         "created_at": obs.created_at.isoformat(),
         "last_seen_at": obs.last_seen_at.isoformat(),
         "times_seen": obs.times_seen,
+        "user_status": obs.review.status if obs.review else "pending",
+        "reviewed_at": obs.review.reviewed_at.isoformat() if obs.review and obs.review.reviewed_at else None,
     }
 
 @app.delete("/api/observations/{obs_id}")
