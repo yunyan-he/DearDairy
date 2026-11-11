@@ -171,6 +171,13 @@ button { color: inherit; }
 .settings-paper label { margin: 16px 0 6px; color: var(--sage); font: 400 9px 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
 .settings-paper input, .settings-paper select { width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid #bfc1b7; border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: 400 13px 'Outfit', sans-serif; }
 .settings-save { margin-top: 30px; padding: 13px 18px; border: 0; background: var(--night); color: #f3f1e9; cursor: pointer; }
+.settings-test { margin-top: 10px; padding: 12px 18px; background: transparent; color: var(--ink); border: 1px solid rgba(42, 54, 46, 0.28); cursor: pointer; }
+.settings-test:disabled, .local-empty button:disabled { opacity: 0.55; cursor: wait; }
+.ai-status { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 0.86rem; }
+.ai-status.success { background: rgba(89, 119, 92, 0.12); color: #3d6042; }
+.ai-status.error { background: rgba(151, 70, 60, 0.1); color: #8a4038; }
+.ai-status.loading { background: rgba(120, 110, 82, 0.1); color: #665e47; }
+.ai-review-paper .ai-reflection-text p { white-space: pre-wrap; }
 .settings-disclosure { margin: 18px 0 0; color: #85877f; font: 400 10px/1.7 'Noto Serif SC', serif; }
 
 .reader-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 34px; background: rgba(25,31,28,.68); backdrop-filter: blur(7px); z-index: 20; }

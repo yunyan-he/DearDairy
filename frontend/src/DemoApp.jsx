@@ -457,6 +457,8 @@ export default function DemoApp({ lang = 'en', mode = 'demo' }) {
   const [apiModel, setApiModel] = useState(localStorage.getItem('deardairy_ai_model') || 'deepseek-chat')
   const [apiKey, setApiKey] = useState(sessionStorage.getItem('deardairy_ai_key') || '')
   const [apiSaved, setApiSaved] = useState(false)
+  const [aiState, setAiState] = useState({ status: 'idle', message: '' })
+  const [aiReflection, setAiReflection] = useState('')
   const nav = useMemo(() => isLocal ? [...c.nav, ['settings', lang === 'en' ? 'Settings' : '设置']] : c.nav, [c.nav, isLocal, lang])
   const entriesById = useMemo(() => Object.fromEntries(demoEntries.map((entry) => [entry.id, entry])), [demoEntries])
   const weekStart = useMemo(() => relativeDate(7), [])
@@ -494,6 +496,64 @@ export default function DemoApp({ lang = 'en', mode = 'demo' }) {
     else sessionStorage.removeItem('deardairy_ai_key')
     setApiSaved(true)
     window.setTimeout(() => setApiSaved(false), 2200)
+  }
+
+  const changeProvider = (provider) => {
+    const defaults = {
+      deepseek: ['https://api.deepseek.com/v1', 'deepseek-chat'],
+      openai: ['https://api.openai.com/v1', 'gpt-4.1-mini'],
+      groq: ['https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile'],
+      openrouter: ['https://openrouter.ai/api/v1', 'openai/gpt-4.1-mini'],
+    }
+    setApiProvider(provider)
+    if (defaults[provider]) {
+      setApiBase(defaults[provider][0])
+      setApiModel(defaults[provider][1])
+    }
+  }
+
+  const callPrivateAI = async (messages, maxTokens = 900) => {
+    const key = apiKey.trim() || sessionStorage.getItem('deardairy_ai_key') || ''
+    if (!key) throw new Error(lang === 'en' ? 'Add your API key in Settings first.' : '请先在设置中填写 API Key。')
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: key, baseUrl: apiBase.trim(), model: apiModel.trim(), messages, maxTokens }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || (lang === 'en' ? 'AI request failed.' : 'AI 请求失败。'))
+    return data.content
+  }
+
+  const testAiConnection = async () => {
+    saveApiSettings()
+    setAiState({ status: 'loading', message: lang === 'en' ? 'Checking the connection…' : '正在检查连接…' })
+    try {
+      await callPrivateAI([{ role: 'user', content: 'Reply with exactly: connected' }], 64)
+      setAiState({ status: 'success', message: lang === 'en' ? 'Connected. Your key remains in this browser session.' : '连接成功。API Key 仍只保留在当前浏览器会话。' })
+    } catch (error) {
+      setAiState({ status: 'error', message: error.message })
+    }
+  }
+
+  const createReflection = async () => {
+    if (!demoEntries.length) return
+    setAiState({ status: 'loading', message: lang === 'en' ? 'Reading the selected entries…' : '正在阅读所选日记…' })
+    setAiReflection('')
+    const selected = demoEntries.slice(0, 12).reverse().map((entry) => `${entry.date}\n${entry.body}`).join('\n\n---\n\n')
+    const system = lang === 'en'
+      ? 'You are a careful journal reflection partner. Write warmly and specifically. Identify possible recurring patterns as hypotheses, never diagnoses or facts. Do not shame productivity or prescribe a life. End with one gentle optional question. Use 3-5 short paragraphs.'
+      : '你是一位谨慎、温和的日记回顾伙伴。具体地回应用户的文字。把可能反复出现的模式写成有待用户判断的假设，而不是诊断或事实。不要用生产力羞辱用户，也不要替用户规定人生。以一个可以不回答的温和问题结尾。写 3 至 5 个短段落。'
+    try {
+      const content = await callPrivateAI([
+        { role: 'system', content: system },
+        { role: 'user', content: `${lang === 'en' ? 'Reflect on these journal entries:' : '请回顾以下日记：'}\n\n${selected}` },
+      ], 1000)
+      setAiReflection(content)
+      setAiState({ status: 'success', message: lang === 'en' ? 'Reflection created from your local entries.' : '回顾已根据你的本地日记生成。' })
+    } catch (error) {
+      setAiState({ status: 'error', message: error.message })
+    }
   }
 
   return (
@@ -574,7 +634,8 @@ export default function DemoApp({ lang = 'en', mode = 'demo' }) {
               <p>{c.reviewSub}</p>
             </div>
             {isLocal ? (
-              <div className="local-empty"><span>02</span><h2>{lang === 'en' ? 'Reviews will be made from your own writing.' : '回顾将从你自己的日记中生成。'}</h2><p>{lang === 'en' ? 'Connect your AI in Settings when you are ready. Until then, no fictional analysis will be shown as if it were yours.' : '准备好后，可以在“设置”中连接自己的 AI。在此之前，这里不会把虚构分析冒充成你的回顾。'}</p><button onClick={() => setView('settings')}>{lang === 'en' ? 'Open AI settings →' : '前往 AI 设置 →'}</button></div>
+              aiReflection ? <article className="review-paper ai-review-paper"><div className="review-period"><span>PRIVATE AI REFLECTION</span><time>{formatRange(monthStart, today, lang)}</time></div><div className="ai-reflection-text">{aiReflection.split('\n').filter(Boolean).map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div><footer><span>{lang === 'en' ? 'Source' : '依据'}</span><strong>{Math.min(demoEntries.length, 12)} {lang === 'en' ? 'local entries · not stored on the server' : '篇本地日记 · 服务器不保存'}</strong><button onClick={createReflection}>{lang === 'en' ? 'Create again' : '重新生成'}</button></footer></article>
+              : <div className="local-empty"><span>02</span><h2>{lang === 'en' ? 'Reviews will be made from your own writing.' : '回顾将从你自己的日记中生成。'}</h2><p>{lang === 'en' ? 'Connect your AI in Settings when you are ready. Your latest 12 entries will be sent only for this request.' : '准备好后，在“设置”中连接自己的 AI。最近 12 篇日记只会为这一次请求发送。'}</p>{demoEntries.length > 0 && apiKey ? <button onClick={createReflection} disabled={aiState.status === 'loading'}>{aiState.status === 'loading' ? (lang === 'en' ? 'Creating reflection…' : '正在生成回顾…') : (lang === 'en' ? 'Create a private reflection →' : '生成私人回顾 →')}</button> : <button onClick={() => setView('settings')}>{lang === 'en' ? 'Open AI settings →' : '前往 AI 设置 →'}</button>}{aiState.message && <p className={`ai-status ${aiState.status}`}>{aiState.message}</p>}</div>
             ) : <>
             <div className="review-switch" role="tablist" aria-label="回顾周期">
               <button className={reviewType === 'week' ? 'active' : ''} onClick={() => setReviewType('week')}>{c.week}</button>
@@ -667,10 +728,11 @@ export default function DemoApp({ lang = 'en', mode = 'demo' }) {
             <section className="settings-paper">
               <div className="settings-title"><span>AI</span><div><h2>{lang === 'en' ? 'Connect your own model' : '连接你自己的模型'}</h2><p>{lang === 'en' ? 'The API key is kept only for this browser session and disappears when the browser session ends.' : 'API Key 默认只保留在当前浏览器会话中，关闭会话后自动消失。'}</p></div></div>
               <label>{lang === 'en' ? 'Provider' : '服务商'}</label>
-              <select value={apiProvider} onChange={(event) => setApiProvider(event.target.value)}>
+              <select value={apiProvider} onChange={(event) => changeProvider(event.target.value)}>
                 <option value="deepseek">DeepSeek</option>
                 <option value="openai">OpenAI</option>
-                <option value="compatible">OpenAI-compatible</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
               </select>
               <label>API Base URL</label>
               <input value={apiBase} onChange={(event) => setApiBase(event.target.value)} />
@@ -679,7 +741,9 @@ export default function DemoApp({ lang = 'en', mode = 'demo' }) {
               <label>API Key</label>
               <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" />
               <button className="settings-save" onClick={saveApiSettings}>{apiSaved ? (lang === 'en' ? 'Saved for this session' : '已保存到当前会话') : (lang === 'en' ? 'Save AI settings' : '保存 AI 设置')}</button>
-              <p className="settings-disclosure">{lang === 'en' ? 'Connecting a model will send only the text needed for the analysis to the selected provider. DearDairy does not need a database for this mode. The forwarding proxy is the next implementation step.' : '连接模型后，只有完成当前分析所需的文字会发送给所选服务商。本地模式不需要数据库；无状态转发代理将在下一步接入。'}</p>
+              <button className="settings-test" onClick={testAiConnection} disabled={aiState.status === 'loading'}>{aiState.status === 'loading' ? (lang === 'en' ? 'Testing…' : '正在测试…') : (lang === 'en' ? 'Test connection' : '测试连接')}</button>
+              {aiState.message && <p className={`ai-status ${aiState.status}`}>{aiState.message}</p>}
+              <p className="settings-disclosure">{lang === 'en' ? 'Only text needed for the analysis is sent through a stateless Vercel function to the selected provider. DearDairy does not store your key, request, or response in a database. Supported hosts: DeepSeek, OpenAI, Groq, and OpenRouter.' : '只有完成当前分析所需的文字会通过无状态 Vercel 接口发送给所选服务商。DearDairy 不会把 API Key、请求或回答写入数据库。目前支持 DeepSeek、OpenAI、Groq 和 OpenRouter。'}</p>
             </section>
           </div>
         )}

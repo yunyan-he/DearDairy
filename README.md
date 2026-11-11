@@ -39,6 +39,6 @@ For the full reflection, see the [Chinese product reflection and closing note](.
 
 The backend-free interactive showcase is available in English at `/demo` and Chinese at `/cn/demo`, with fictional entries, a Persona, recent observations, and the observation-review flow. The real application is available in English at `/` and Chinese at `/cn`.
 
-The Supabase-free local journal is available at `/journal` in English and `/cn/journal` in Chinese. Entries stay in the current browser; users may provide their own AI API configuration in Settings.
+The Supabase-free local journal is available at `/journal` in English and `/cn/journal` in Chinese. Entries stay in the current browser. Users may provide a session-only API key and generate a reflection through a stateless Vercel function; DearDairy does not persist the key, request, or response in a database. DeepSeek, OpenAI, Groq, and OpenRouter endpoints are supported.
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) to run the project locally. This is an archived project, so the original application's configuration and dependencies may require adjustment.

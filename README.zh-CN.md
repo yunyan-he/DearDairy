@@ -41,6 +41,6 @@ DearDairy 尝试连接这两件事。
 
 无需账号和后端的交互式作品 Demo 提供英文 `/demo` 与中文 `/cn/demo` 两个入口，其中包含虚构日记、Persona、近期观察以及观察确认流程。实际应用位于英文 `/` 与中文 `/cn`。
 
-无需 Supabase 的本地私人日记位于英文 `/journal` 与中文 `/cn/journal`。日记保存在当前浏览器；AI 服务可由用户在设置中提供自己的 API 配置。
+无需 Supabase 的本地私人日记位于英文 `/journal` 与中文 `/cn/journal`。日记保存在当前浏览器；用户可以提供仅保留在当前会话中的 API Key，并通过无状态 Vercel 接口生成回顾。DearDairy 不会把 Key、请求或回答写入数据库。目前支持 DeepSeek、OpenAI、Groq 和 OpenRouter。
 
 如需在本地运行，请参考 [部署说明](./DEPLOYMENT.md)。这是一个归档项目，原始应用的配置和依赖可能需要自行调整。

@@ -14,7 +14,8 @@
 - [x] Add real local-journal routes at `/journal` and `/cn/journal` using the same interface as the demo.
 - [x] Persist local entries in the current browser without Supabase or an account.
 - [x] Add local AI provider, Base URL, model, and session-only API Key settings.
-- [ ] Implement the stateless AI forwarding proxy; do not store keys or journal text server-side.
+- [x] Implement the stateless AI forwarding proxy; do not store keys or journal text server-side.
+- [x] Let local-journal users test their connection and generate a private reflection from up to 12 recent entries.
 - [ ] Add local backup export, import, and delete-all controls.
 - [x] Restyle the login and registration page using the demo's visual system.
 - [x] Let new users write immediately instead of forcing the Persona questionnaire.
