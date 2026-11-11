@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { translations, getLang, setLang } from "./i18n";
+import "./actual.css";
 
 // ══════════════════════════════════════════════════════
 // SIMPLE MARKDOWN PARSER
@@ -113,13 +114,27 @@ async function authedFetch(endpoint, options = {}) {
 // ══════════════════════════════════════════════════════
 
 async function saveEntry(entry) {
+  if (localStorage.getItem("diary_local_mode") === "1") {
+    const current = JSON.parse(localStorage.getItem("deardairy_local_entries") || "[]");
+    const next = [entry, ...current.filter(item => item.id !== entry.id)].sort((a, b) => new Date(b.date) - new Date(a.date));
+    localStorage.setItem("deardairy_local_entries", JSON.stringify(next));
+    return;
+  }
   await authedFetch("/api/entries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry) });
 }
 async function loadEntries() {
+  if (localStorage.getItem("diary_local_mode") === "1") {
+    return JSON.parse(localStorage.getItem("deardairy_local_entries") || "[]");
+  }
   try { const r = await authedFetch("/api/entries"); if (r.ok) return r.json(); } catch { }
   return [];
 }
 async function delEntry(id) {
+  if (localStorage.getItem("diary_local_mode") === "1") {
+    const current = JSON.parse(localStorage.getItem("deardairy_local_entries") || "[]");
+    localStorage.setItem("deardairy_local_entries", JSON.stringify(current.filter(item => item.id !== id)));
+    return;
+  }
   await authedFetch(`/api/entries/${id}`, { method: "DELETE" });
 }
 
@@ -127,6 +142,9 @@ async function delEntry(id) {
 // AI
 // ══════════════════════════════════════════════════════
 async function callAI(system, user, maxTokens = 800) {
+  if (localStorage.getItem("diary_local_mode") === "1") {
+    throw new Error("AI is unavailable in local-only mode");
+  }
   const r = await authedFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -300,16 +318,18 @@ const Glass = ({ children, style = {}, onClick }) => (
 // ══════════════════════════════════════════════════════
 export default function App() {
   // ── Language ──
-  const [lang, setLangState] = useState(getLang); // null = not chosen yet
-  const t = lang ? translations[lang] : translations["zh"]; // fallback while choosing
+  const routeLang = window.location.pathname === "/cn" || window.location.pathname.startsWith("/cn/") ? "zh" : "en";
+  const [lang] = useState(routeLang);
+  const t = translations[lang];
   const MOODS = getMoods(t);
 
-  const switchLang = (newLang) => {
-    setLang(newLang);
-    setLangState(newLang);
-  };
+  useEffect(() => {
+    if (getLang() !== routeLang) setLang(routeLang);
+    document.documentElement.lang = routeLang === "en" ? "en" : "zh-CN";
+  }, [routeLang]);
   const [authToken, setAuthToken] = useState(localStorage.getItem("diary_token") || null);
-  const [showAuthModal, setShowAuthModal] = useState(!authToken);
+  const [localMode, setLocalMode] = useState(localStorage.getItem("diary_local_mode") === "1");
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState("login"); // login | register
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -421,10 +441,22 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem("diary_token");
+    localStorage.removeItem("diary_local_mode");
     setAuthToken(null);
-    setShowAuthModal(true);
+    setLocalMode(false);
+    setShowAuthModal(false);
     setEntries([]);
     setSummaryHistory([]);
+  };
+
+  const enterLocalMode = () => {
+    localStorage.removeItem("diary_token");
+    localStorage.setItem("diary_local_mode", "1");
+    setAuthToken(null);
+    setLocalMode(true);
+    setShowAuthModal(false);
+    setView("write");
+    window.location.href = lang === "en" ? "/journal" : "/cn/journal";
   };
 
   // Load existing summary when switching to summary view or changing sumType
@@ -444,6 +476,23 @@ export default function App() {
   }, [view, sumType, summaryHistory]);
 
   useEffect(() => {
+    if (localMode) {
+      loadEntries().then((localEntries) => {
+        setEntries(localEntries);
+        setStreak(calcStreak(localEntries));
+        setProfile(lang === "en"
+          ? "[Local profile not established]\n\nYour entries stay in this browser. Stable personality descriptions will only appear after you review and confirm recurring observations."
+          : "【本地人格档案尚未建立】\n\n日记仅保存在当前浏览器。只有在你审阅并确认反复出现的观察后，稳定的人格描述才会逐渐形成。"
+        );
+        setProfileVersion(lang === "en" ? "Local" : "本地模式");
+        setObservations([]);
+        setSummaryHistory([]);
+        setProfileHistory([]);
+        setNeedsOnboarding(false);
+        setLoading(false);
+      });
+      return;
+    }
     if (!authToken) return;
 
     const fetchProfileState = async () => { try { const r = await authedFetch("/api/profile"); if (r.ok) return r.json(); } catch { } return null; };
@@ -467,7 +516,12 @@ export default function App() {
         setProfile(profileState.content);
         setProfileVersion(profileState.version || "v1.0");
       } else {
-        setNeedsOnboarding(true);
+        setProfile(lang === "en"
+          ? "[Profile not established]\n\nUse the journal entry itself as the primary evidence. Do not assume stable personality traits until the user chooses to build a profile or confirms recurring observations."
+          : "【人格档案尚未建立】\n\n请以用户当下的日记为主要依据。在用户主动建立档案或确认反复出现的观察之前，不要假定稳定的人格特征。"
+        );
+        setProfileVersion(lang === "en" ? "Not established" : "尚未建立");
+        setNeedsOnboarding(false);
       }
       if (summaries) setSummaryHistory(summaries);
       if (me) {
@@ -501,7 +555,7 @@ export default function App() {
       const wroteToday = e.some(en => new Date(en.date).toDateString() === now.toDateString());
       if (hour >= 22 && !wroteToday) setLateNightNudge(true);
     });
-  }, [authToken]);
+  }, [authToken, lang, localMode]);
 
   const dismissReminder = async () => {
     setReminderDismissed(true);
@@ -1802,6 +1856,11 @@ ${profile}
                     <p style={{ fontSize: 11.5, color: "rgba(140,155,210,0.6)", marginTop: 12, lineHeight: 1.7 }}>
                       这是系统目前对你的长期理解。AI 每周提出的观察必须先经过你的确认；只有确认过并持续出现的模式，才可能在月度复盘中进入这份档案。
                     </p>
+                    {(profileVersion === "尚未建立" || profileVersion === "Not established") && (
+                      <button onClick={() => { setOnboardingStep(0); setNeedsOnboarding(true); }} style={{ marginTop: 12, padding: "9px 14px", borderRadius: 6, border: "1px solid rgba(150,160,220,.35)", background: "rgba(100,110,180,.16)", color: "rgba(210,215,245,.9)", cursor: "pointer", fontSize: 12 }}>
+                        {lang === "en" ? "Build an initial profile (optional)" : "建立初始人格档案（可选）"}
+                      </button>
+                    )}
                     {profileHistory.length > 0 && (
                       <div style={{ marginTop: 16, borderTop: "1px solid rgba(120,140,220,0.18)", paddingTop: 14 }}>
                         <div style={{ fontSize: 11, color: "rgba(155,165,220,0.66)", letterSpacing: ".12em", marginBottom: 10 }}>版本记录</div>
@@ -1982,105 +2041,97 @@ ${profile}
         )}
       </div>
 
-      {/* ════════ LANGUAGE SELECTION (first launch) ════════ */}
-      {!lang && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-          background: "rgba(10,12,30,0.92)", backdropFilter: "blur(20px)", zIndex: 9999,
-          display: "flex", alignItems: "center", justifyContent: "center"
-        }}>
-          <Glass style={{ width: 340, padding: "40px 30px", textAlign: "center" }} className="anim-up">
-            <div style={{ fontSize: 32, marginBottom: 16 }}>✦</div>
-            <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)", marginBottom: 10 }}>
-              {translations.zh.langSelect.title}
-            </h2>
-            <p style={{ fontSize: 14, color: "rgba(160,175,220,0.7)", marginBottom: 30 }}>
-              {translations.zh.langSelect.subtitle}
-            </p>
-            <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-              <button onClick={() => switchLang("zh")} style={{
-                padding: "14px 32px", borderRadius: 10, border: "1px solid rgba(140,160,255,0.4)",
-                background: "rgba(80,100,180,0.2)", color: "rgba(220,230,255,0.95)",
-                fontSize: 18, cursor: "pointer", fontWeight: 600, transition: "all .2s"
-              }}>中文</button>
-              <button onClick={() => switchLang("en")} style={{
-                padding: "14px 32px", borderRadius: 10, border: "1px solid rgba(140,160,255,0.4)",
-                background: "rgba(80,100,180,0.2)", color: "rgba(220,230,255,0.95)",
-                fontSize: 18, cursor: "pointer", fontWeight: 600, transition: "all .2s"
-              }}>English</button>
+      {/* ════════════ PUBLIC LANDING PAGE ════════════ */}
+      {!authToken && !localMode && !showAuthModal && (
+        <div className="actual-landing">
+          <header className="actual-landing-header">
+            <a className="actual-brand actual-brand-dark" href={lang === "en" ? "/" : "/cn"}><span>◐</span> DearDairy</a>
+            <div className="actual-landing-tools">
+              <a href={lang === "en" ? "/cn" : "/"}>{lang === "en" ? "中文" : "English"}</a>
+              <button onClick={() => { setAuthMode("login"); setShowAuthModal(true); }}>{lang === "en" ? "Private sign in" : "私人日记登录"}</button>
             </div>
-          </Glass>
+          </header>
+
+          <main className="actual-landing-main">
+            <section className="actual-landing-hero">
+              <p className="actual-kicker">{lang === "en" ? "A JOURNAL THAT LEARNS WITH YOUR PERMISSION" : "一份在你允许之下，慢慢了解你的日记"}</p>
+              <h1>{lang === "en" ? <>Your words are evidence.<br />AI observations are only hypotheses.</> : <>你的文字是证据。<br />AI 的理解只是等待确认的假设。</>}</h1>
+              <p>{lang === "en"
+                ? "DearDairy explores a journal that notices recurring patterns over time, while leaving the final description of who you are in your hands."
+                : "DearDairy 尝试从长期日记中发现反复出现的行为模式，同时把“我是谁”的最终解释权留给你。"}</p>
+              <div className="actual-landing-actions">
+                <a className="actual-demo-cta" href={lang === "en" ? "/demo" : "/cn/demo"}>{lang === "en" ? "Enter the interactive demo" : "进入交互 Demo"}<span>→</span></a>
+                <button className="actual-local-cta" onClick={enterLocalMode}>{lang === "en" ? "Start a local private journal" : "开始本地私人日记"}</button>
+                <button onClick={() => { setAuthMode("register"); setShowAuthModal(true); }}>{lang === "en" ? "Create a cloud account" : "创建云端账号"}</button>
+              </div>
+              <small>{lang === "en" ? "The demo uses fictional entries and requires no account." : "Demo 使用虚构日记，不需要账号，也不会保存你的输入。"}</small>
+            </section>
+
+            <section className="actual-landing-principle">
+              <div><span>01</span><h2>{lang === "en" ? "Write without performing" : "先诚实地写"}</h2><p>{lang === "en" ? "No streak pressure, productivity score, or demand to turn every day into progress." : "没有连续打卡、完成率，也不要求把每一天都解释成进步。"}</p></div>
+              <div><span>02</span><h2>{lang === "en" ? "See what repeats" : "看见反复出现的模式"}</h2><p>{lang === "en" ? "AI connects moments across weeks and months, with the original entries kept visible as evidence." : "AI 连接几周、几个月之间的片段，同时保留原始日记作为依据。"}</p></div>
+              <div><span>03</span><h2>{lang === "en" ? "Decide what belongs to you" : "由你决定什么属于自己"}</h2><p>{lang === "en" ? "Confirm, rewrite, or reject every observation before it can shape the long-term Persona." : "每一条观察都可以确认、改写或拒绝，然后才可能进入长期 Persona。"}</p></div>
+            </section>
+          </main>
         </div>
       )}
 
       {/* ════════════ AUTHENTICATION MODAL ════════════ */}
-      {lang && showAuthModal && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, width: "100%", height: "100%",
-          background: "rgba(10,12,30,0.85)", backdropFilter: "blur(20px)", zIndex: 9999,
-          display: "flex", alignItems: "center", justifyContent: "center"
-        }}>
-          <Glass style={{ width: 340, padding: "30px", display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ textAlign: "center", marginBottom: 4 }}>
-              <div style={{ fontSize: 13, color: "rgba(140,155,200,0.6)", marginBottom: 4 }}>{t.auth.tagline}</div>
-              <h2 style={{ fontSize: 22, fontWeight: 600, color: "rgba(220,225,255,0.95)" }}>
+      {!localMode && showAuthModal && (
+        <div className="actual-auth-shell">
+          <section className="actual-auth-story">
+            <a className="actual-brand" href={lang === "en" ? "/" : "/cn"}><span>◐</span> DearDairy</a>
+            <div className="actual-story-copy">
+              <p className="actual-kicker">{lang === "en" ? "A PRIVATE RECORD, READ OVER TIME" : "一份由时间慢慢读懂的私人记录"}</p>
+              <h1>{lang === "en" ? <>Write first.<br />Understand later.</> : <>先写下来，<br />再慢慢理解自己。</>}</h1>
+              <p>{lang === "en" ? "Your journal comes first. Personality descriptions remain hypotheses until you confirm them." : "日记先于分析。关于你的描述始终只是观察，直到你亲自确认它。"}</p>
+            </div>
+            <div className="actual-auth-links"><a href={lang === "en" ? "/demo" : "/cn/demo"}>{lang === "en" ? "Explore the fictional demo" : "先看看虚构 Demo"} →</a></div>
+          </section>
+          <section className="actual-auth-panel">
+            <div className="actual-auth-card">
+              <p className="actual-kicker">{authMode === "login" ? (lang === "en" ? "WELCOME BACK" : "欢迎回来") : (lang === "en" ? "BEGIN HERE" : "从这里开始")}</p>
+              <h2>
                 {authMode === "login" ? t.auth.loginTitle : t.auth.registerTitle}
               </h2>
-            </div>
+              <p className="actual-auth-intro">{authMode === "login"
+                ? (lang === "en" ? "Return to your private archive." : "回到只属于你的记录里。")
+                : (lang === "en" ? "No questionnaire first. You can start writing immediately." : "不需要先填写问卷，注册后可以直接开始写。")}</p>
 
-            <form onSubmit={handleAuth} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <form onSubmit={handleAuth} className="actual-auth-form">
+              <label>{lang === "en" ? "Username" : "用户名"}</label>
               <input
                 type="text" required placeholder={t.auth.usernamePlaceholder}
                 value={authUsername} onChange={e => setAuthUsername(e.target.value)}
-                style={{
-                  padding: "12px 14px", borderRadius: 8,
-                  background: "rgba(10,14,35,0.6)",
-                  border: "1px solid rgba(120,140,255,0.3)",
-                  color: "rgba(230,235,255,0.9)",
-                  fontSize: 14, outline: "none"
-                }}
               />
+              <label>{lang === "en" ? "Password" : "密码"}</label>
               <input
                 type="password" required placeholder={t.auth.passwordPlaceholder}
                 value={authPassword} onChange={e => setAuthPassword(e.target.value)}
-                style={{
-                  padding: "12px 14px", borderRadius: 8,
-                  background: "rgba(10,14,35,0.6)",
-                  border: "1px solid rgba(120,140,255,0.3)",
-                  color: "rgba(230,235,255,0.9)",
-                  fontSize: 14, outline: "none"
-                }}
               />
-              {authError && <div style={{ color: "rgba(255,100,100,0.8)", fontSize: 12, textAlign: "center" }}>{authError}</div>}
+              {authError && <div className="actual-auth-error">{authError}</div>}
 
-              <button disabled={authLoading} type="submit" style={{
-                marginTop: 8, padding: "12px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: "linear-gradient(135deg,rgba(140,120,255,0.85),rgba(80,160,255,0.85))",
-                color: "rgba(255,255,255,0.95)", fontWeight: 600, fontSize: 15, opacity: authLoading ? .6 : 1
-              }}>
+              <button disabled={authLoading} type="submit" className="actual-auth-submit">
                 {authLoading
                   ? (authMode === "login" ? t.auth.loggingIn : t.auth.registering)
                   : (authMode === "login" ? t.auth.loginBtn : t.auth.registerBtn)}
               </button>
             </form>
 
-            <div style={{ textAlign: "center", marginTop: 4 }}>
+            <div className="actual-auth-switch">
               <button
                 type="button"
                 onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); }}
-                style={{ background: "none", border: "none", color: "rgba(160,180,255,0.7)", fontSize: 13, cursor: "pointer", textDecoration: "underline" }}
               >
                 {authMode === "login" ? t.auth.switchToRegister : t.auth.switchToLogin}
               </button>
             </div>
 
-            {/* Lang switcher */}
-            <div style={{ textAlign: "center", borderTop: "1px solid rgba(100,120,200,0.15)", paddingTop: 12 }}>
-              <button onClick={() => { setLang(null); setLangState(null); }} style={{ background: "none", border: "none", color: "rgba(120,140,180,0.5)", fontSize: 11, cursor: "pointer" }}>
-                {lang === "zh" ? "Switch to English" : "切换中文"}
-              </button>
+            <div className="actual-lang-link">
+              <a href={lang === "zh" ? "/" : "/cn"}>{lang === "zh" ? "English site" : "中文网站"}</a>
             </div>
-          </Glass>
+            </div>
+          </section>
         </div>
       )}
     </>

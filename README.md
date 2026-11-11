@@ -37,6 +37,8 @@ For the full reflection, see the [Chinese product reflection and closing note](.
 
 ## Viewing locally
 
-The backend-free interactive showcase is available at `/demo`, with fictional entries, a Persona, recent observations, and the observation-review flow. The original application remains at `/`.
+The backend-free interactive showcase is available in English at `/demo` and Chinese at `/cn/demo`, with fictional entries, a Persona, recent observations, and the observation-review flow. The real application is available in English at `/` and Chinese at `/cn`.
+
+The Supabase-free local journal is available at `/journal` in English and `/cn/journal` in Chinese. Entries stay in the current browser; users may provide their own AI API configuration in Settings.
 
 See [DEPLOYMENT.md](./DEPLOYMENT.md) to run the project locally. This is an archived project, so the original application's configuration and dependencies may require adjustment.

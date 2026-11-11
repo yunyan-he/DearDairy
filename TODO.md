@@ -6,6 +6,24 @@
 - [ ] Refine the visual design after reviewing the first demo direction. This is presentation work, not a restart of product development.
 - [ ] Add a clear public entry point to the demo when the preferred deployment URL is decided.
 
+## Visual migration of the original application
+
+- [x] Replace the language-choice modal with English `/` and Chinese `/cn` entry points; keep `/en` and `/zh` as compatibility redirects.
+- [x] Provide the complete fictional demo in English at `/demo` and Chinese at `/cn/demo`.
+- [x] Make the public homepage lead with the no-account demo; move private login and registration to secondary actions.
+- [x] Add real local-journal routes at `/journal` and `/cn/journal` using the same interface as the demo.
+- [x] Persist local entries in the current browser without Supabase or an account.
+- [x] Add local AI provider, Base URL, model, and session-only API Key settings.
+- [ ] Implement the stateless AI forwarding proxy; do not store keys or journal text server-side.
+- [ ] Add local backup export, import, and delete-all controls.
+- [x] Restyle the login and registration page using the demo's visual system.
+- [x] Let new users write immediately instead of forcing the Persona questionnaire.
+- [ ] Migrate the real writing page.
+- [ ] Migrate journal history and entry reading.
+- [ ] Migrate weekly, monthly, and yearly reviews.
+- [ ] Migrate observations and Persona; keep the initial questionnaire optional here.
+- [ ] Migrate settings and complete all remaining English copy.
+
 ## Archived product research — not planned work
 
 DearDairy will not continue as a commercial or large-scale product-development effort. The material below is retained as historical research thinking, not as a condition for restarting development.
