@@ -1,8 +1,14 @@
 # DearDairy TODO
 
-## Product decision: validate before building more
+## Prototype presentation
 
-DearDairy is currently a product experiment, not a validated diary business. Do not add more AI, RAG, analytics, or engagement features until the user-governed observation flow has been tested with real users.
+- [x] Create a backend-free interactive `/demo` with fictional journal entries, Persona, recent observations, evidence, and confirm/edit/reject interactions.
+- [ ] Refine the visual design after reviewing the first demo direction. This is presentation work, not a restart of product development.
+- [ ] Add a clear public entry point to the demo when the preferred deployment URL is decided.
+
+## Archived product research — not planned work
+
+DearDairy will not continue as a commercial or large-scale product-development effort. The material below is retained as historical research thinking, not as a condition for restarting development.
 
 ### Current hypothesis
 
@@ -45,7 +51,7 @@ For every product, capture evidence for:
 - [ ] Invite them back one week later without building reminders or gamification.
 - [ ] Continue only if at least 3 of 5 users actively engage with the judgments and at least 2 voluntarily return.
 
-## Engineering follow-ups if the hypothesis survives
+## Archived engineering ideas — not planned work
 
 - [ ] Add a monthly “proposed Persona changes” review so the user can approve the final wording before it changes the Persona.
 - [ ] Show the diary or review evidence behind each observation candidate.

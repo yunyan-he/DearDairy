@@ -1,209 +1,42 @@
 # DearDairy 🌙
 
-> *A private AI-powered journal that grows alongside you.*
+> A web prototype exploring AI journaling, longitudinal personality observations, and self-understanding.
+
+**Project status: active development has ended.** DearDairy is not intended for commercialization or large-scale adoption. The web prototype is a vessel for making my idea of an ideal journal—especially in the age of AI—concrete.
 
 **[中文版 README →](./README.zh-CN.md)**
 
----
+## The question behind the project
 
-DearDairy is more than a journaling app. It's a **long-term growth companion** — a system designed to track not just what you wrote, but who you are becoming.
+DearDairy was not primarily an attempt to put a diary on the web. It explored a more specific question:
 
-The core idea: your personality isn't static. Every week, every month, your patterns shift. DearDairy builds a **living personality profile (Persona)** that evolves with every entry, every weekly review, every monthly retrospective — so you can watch yourself change over time, with the clarity that only a consistent outside observer can offer.
+> Can AI identify recurring patterns across a person's long-term journal and help maintain an evolving personality description that the person controls?
 
----
+People want not only to express themselves, but also to feel understood and interpreted. A traditional journal preserves expression without responding. An ordinary AI conversation can respond immediately, but may not reveal how someone changes over months or years. DearDairy explored the space between the two.
 
-## 🧭 The User Journey
+## Core concept
 
-DearDairy is designed as a complete growth loop:
-
-```
-First Launch → Onboarding Quiz → Initial Persona Generated
-     ↓
-Daily Journaling (with AI reflection + emotional check-in)
-     ↓
-Weekly Review → AI proposes observation candidates → User confirms, edits, or rejects
-     ↓
-Monthly Review → Confirmed stable patterns promoted into Core Persona → Outdated patterns retired
-     ↓
-Yearly Review → Full persona reconstruction → See how far you've come
+```text
+Onboarding questionnaire → Initial Persona
+Long-term journaling → AI proposes observations
+User confirms, edits, or rejects them
+Recurring, confirmed observations → Long-term Persona
 ```
 
-### 1. Onboarding — Get to Know Yourself First
+The central principle is: **journal entries are evidence; AI interpretations are hypotheses.** The system should not define a person without their consent. Only observations confirmed by the user may enter the long-term Persona.
 
-Before you write a single entry, DearDairy asks you a short **psychological onboarding quiz**. This isn't a generic Myers-Briggs clone — it's designed to surface your current self-understanding across key dimensions: how you handle stress, what motivates you, where you tend to get stuck.
+Reflection prompts should also be gentle, specific, and optional. Their purpose is to invite attention to an emotion, motivation, or tension—not to create guilt through streaks, completion scores, or productivity language.
 
-The output: your **Initial Persona** — a structured profile of who you appear to be *right now*. This becomes the baseline everything else is measured against.
+## About the prototype
 
-### 2. Daily Journaling
+The prototype uses React, FastAPI, PostgreSQL, and an OpenAI-compatible model API. It includes experimental journaling, reflection prompts, periodic reviews, versioned Personas, and user-governed observation review.
 
-Write your entry. Pick a mood. That's it.
+The web was the easiest medium in which to build the idea, not necessarily the right medium for journaling. I do not expect a journal website to have a clear path to profitability or large-scale use: compared with a mobile app, a notes app, or simply talking to AI, it introduces additional friction. I therefore do not see this format as something to develop aggressively. Its purpose is to embody and test an idea about journaling in the age of AI.
 
-After each entry, the AI generates a **tailored reflection question** based on your content *and* your current persona — not a generic prompt, but something that speaks to your specific patterns and open questions.
+For the full reflection, see the [Chinese product reflection and closing note](./PRODUCT_REFLECTION_2026-11-10.md).
 
-**Emotional safety net:** If the AI detects signs of emotional distress or persistent negative spiraling, it doesn't just ask another question — it gently shifts the conversation toward something more grounding. *(A more principled CBT-informed intervention system is a planned future direction — see Roadmap.)*
+## Viewing locally
 
-### 3. Weekly & Monthly Reviews
+The backend-free interactive showcase is available at `/demo`, with fictional entries, a Persona, recent observations, and the observation-review flow. The original application remains at `/`.
 
-- **Weekly review** (≥5 entries): Deep analysis of your week. AI proposes behavioral observations, but they remain hypotheses until you confirm, edit, or reject them.
-- **Monthly review** (≥15 entries): Only user-confirmed recurring observations can be promoted into your **Core Persona**. Rejected observations are never treated as facts about you.
-- **Yearly review** (≥180 entries): Full persona reconstruction. A chance to see yourself clearly across a full year.
-
-Monthly and yearly reviews create new profile versions (`monthly +0.3`, `yearly +1.0`). Weekly reviews collect evidence without directly rewriting who the system says you are.
-
----
-
-## ✨ Features
-
-| Feature | Description |
-|---|---|
-| 📝 Daily Journal | Write entries, pick mood, backdate up to 3 days |
-| 🧠 AI Reflection | Personalized follow-up question after each entry |
-| 🛡 Emotional Check-in | AI detects distress signals, guides toward reflection |
-| 👤 Living Persona | Evolving personality profile with versioned history |
-| 🔄 Weekly Review | AI observation candidates with user confirmation, editing, or rejection |
-| 📅 Monthly Review | Confirmed-pattern promotion and outdated-pattern retirement |
-| 🌍 Bilingual | Full EN / ZH support — UI, AI prompts, voice input |
-| 🎙 Voice Input | Browser-native Web Speech API, no cost |
-
----
-
-## 🌱 Roadmap — Future Directions
-
-> **These features are not yet implemented.** The following represents the product's longer-term upgrade vision — directions the project is actively thinking about, but has not yet built.
-
-DearDairy is an early-stage product. The core loop (journaling → AI reflection → reviews → Persona) is working. What follows is where it could go next:
-
-### 🗄 RAG-based Memory
-Replace the current flat profile system with a vector database (RAG) approach — so the AI can surface specific past entries, patterns, and moments in context, rather than working only from a summarized profile snapshot.
-
-### 🧪 Rigorous Psychological Design
-The onboarding quiz and persona generation need more careful grounding:
-- **Quiz design:** How many questions are too many before users drop off? Which question formats yield the most honest, useful responses?
-- **Persona language:** How do you describe someone's shadow traits accurately without making them feel judged or labeled? What framing helps people engage with difficult self-observations rather than reject them?
-- **CBT integration:** The emotional intervention system should be principled, not improvised. This means structured dialogue patterns, escalation logic, and knowing when *not* to intervene.
-
-### 🤔 A Philosophical Thread
-
-There's a question underneath all of this that doesn't have a clean answer:
-
-*If an AI has been observing you, summarizing you, and shaping how you see yourself for years — and you've internalized some of that — are the new parts of you still... you?*
-
-This is the [Ship of Theseus](https://en.wikipedia.org/wiki/Ship_of_Theseus) problem, applied to identity and self-knowledge in the age of AI. DearDairy doesn't try to resolve it. But it thinks it's worth sitting with.
-
----
-
-## 🛠 Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Frontend | React (Vite), Vanilla CSS, Canvas aurora background |
-| Backend | FastAPI (Python), SQLAlchemy |
-| Database | Supabase (PostgreSQL) |
-| AI | DeepSeek-compatible OpenAI API (model configurable via env) |
-| Auth | JWT (python-jose + passlib) |
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js ≥ 18
-- Python ≥ 3.11
-- A [Supabase](https://supabase.com) project (free tier works)
-- A [DeepSeek](https://platform.deepseek.com) API key
-
-### 1. Clone the repo
-```bash
-git clone https://github.com/yunyan-he/DearDairy.git
-cd DearDairy
-```
-
-### 2. Backend setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # then fill in your credentials
-```
-
-```env
-AI_API_KEY=sk-...
-AI_BASE_URL=https://api.deepseek.com/v1
-AI_MODEL=deepseek-chat
-SUPABASE_URL=postgresql://...                    # your Supabase connection string
-SECRET_KEY=your_random_secret_key
-```
-
-### 3. Frontend setup
-```bash
-cd frontend
-npm install
-```
-
-### 4. Run locally
-
-```bash
-# Terminal 1 — backend
-make backend
-
-# Terminal 2 — frontend
-make frontend
-```
-
-Open **http://localhost:5173** in Chrome.
-
----
-
-## 📁 Project Structure
-
-```
-DearDairy/
-├── backend/
-│   ├── main.py          # FastAPI app, all API routes
-│   ├── models.py        # SQLAlchemy models
-│   ├── requirements.txt
-│   └── .env.example
-├── frontend/
-│   └── src/
-│       ├── App.jsx      # Main React app
-│       └── i18n.js      # EN/ZH translations
-└── Makefile             # Quick-start commands
-```
-
----
-
-## 🔑 Environment Variables
-
-| Variable | Description |
-|---|---|
-| `AI_API_KEY` | Your DeepSeek or OpenAI-compatible API key |
-| `AI_BASE_URL` | Defaults to `https://api.deepseek.com/v1` |
-| `AI_MODEL` | Defaults to `deepseek-chat` |
-| `SUPABASE_URL` | PostgreSQL connection string (Supabase) |
-| `SECRET_KEY` | Random string for JWT signing |
-
----
-
-## 🗄 Database Schema
-
-Tables are auto-created on startup via SQLAlchemy:
-
-- **users** — `id`, `username`, `hashed_password`, `api_key`, `usage_count`
-- **entries** — `id`, `user_id`, `date`, `content`, `mood`, `question`, `answer`
-- **summaries** — `id`, `user_id`, `type`, `content`, `covered_dates`, `created_at`
-- **profile_states** — `id`, `user_id`, `profile`, `version`, `summary_history`
-- **recent_observations** — `id`, `user_id`, `content`, `created_at`, `last_seen_at`, `times_seen`
-- **observation_reviews** — the user's confirmation, correction, or rejection of each AI observation candidate
-
-See [TODO.md](./TODO.md) for the product-validation plan and current diary/AI-journaling competitive research checklist.
-
----
-
-## 📄 License
-
-MIT — do whatever you want with it.
-
----
-
-*Built for anyone who wants to express honestly and record  intentionally.* ✦
+See [DEPLOYMENT.md](./DEPLOYMENT.md) to run the project locally. This is an archived project, so the original application's configuration and dependencies may require adjustment.
