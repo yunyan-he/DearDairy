@@ -4,7 +4,16 @@
 
 - [x] Create a backend-free interactive `/demo` with fictional journal entries, Persona, recent observations, evidence, and confirm/edit/reject interactions.
 - [ ] Refine the visual design after reviewing the first demo direction. This is presentation work, not a restart of product development.
-- [ ] Add a clear public entry point to the demo when the preferred deployment URL is decided.
+- [x] Add clear public entry points to the deployed English and Chinese demos.
+
+## Validate through real use — later
+
+- [ ] Use `/cn/journal` or `/journal` as a real private journal for long enough to evaluate the experience rather than only the prototype.
+- [ ] Compare the real writing, review, observation, and Persona flows with the demo; record where the real experience feels less coherent or less calm.
+- [ ] Check whether reflection prompts stay specific, gentle, optional, and free of productivity shame across different moods and entry types.
+- [ ] Check whether AI reviews remain grounded in the selected entries and clearly separate evidence from interpretation.
+- [ ] Check whether observation confirmation/edit/rejection and Persona updates preserve meaningful user control in actual use.
+- [ ] Decide from real use whether backup export/import is necessary before relying on browser-local storage.
 
 ## Visual migration of the original application
 
